@@ -848,6 +848,19 @@ PVR_ERROR PVRClientMythTV::GetRecordings(ADDON_HANDLE handle)
       }
     }
   }
+  typedef std::map<std::string, std::set<time_t> > RecentTimesMap;
+  RecentTimesMap recentTimes;
+  // Calculate recents
+  for (ProgramInfoMap::iterator it = m_recordings.begin(); it != m_recordings.end(); ++it)
+  {
+    if (!it->second.IsNull() && it->second.IsVisible())
+    {
+      std::set<time_t> &timesSet = recentTimes[it->second.RecordingGroup()];
+      timesSet.insert(it->second.RecordingStartTime());
+      if (timesSet.size() > 20)
+        timesSet.erase(timesSet.begin());
+    }
+  }
   // Transfer to PVR
   for (ProgramInfoMap::iterator it = m_recordings.begin(); it != m_recordings.end(); ++it)
   {
@@ -910,6 +923,14 @@ PVR_ERROR PVRClientMythTV::GetRecordings(ADDON_HANDLE handle)
       PVR_STRCPY(tag.strStreamURL, "");
 
       PVR->TransferRecordingEntry(handle, &tag);
+
+      if (*recentTimes[it->second.RecordingGroup()].begin() >= it->second.RecordingStartTime())
+      {
+        strDirectory.assign(it->second.RecordingGroup());
+        strDirectory.append("/(Recent)");
+        PVR_STRCPY(tag.strDirectory, strDirectory.c_str());
+        PVR->TransferRecordingEntry(handle, &tag);
+      }
     }
   }
 
