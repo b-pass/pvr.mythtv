@@ -866,7 +866,10 @@ PVR_ERROR PVRClientMythTV::GetRecordings(ADDON_HANDLE handle)
       memset(&tag, 0, sizeof(PVR_RECORDING));
       tag.bIsDeleted = false;
 
-      tag.recordingTime = it->second.RecordingStartTime();
+      if (!g_bUseAirdate)
+        tag.recordingTime = it->second.RecordingStartTime();
+      else
+        tag.recordingTime = it->second.Airdate();
       tag.iDuration = it->second.Duration();
       tag.iPlayCount = it->second.IsWatched() ? 1 : 0;
       //@TODO: tag.iLastPlayedPosition
@@ -985,7 +988,10 @@ PVR_ERROR PVRClientMythTV::GetDeletedRecordings(ADDON_HANDLE handle)
       memset(&tag, 0, sizeof(PVR_RECORDING));
       tag.bIsDeleted = true;
 
-      tag.recordingTime = it->second.RecordingStartTime();
+      if (!g_bUseAirdate)
+        tag.recordingTime = it->second.RecordingStartTime();
+      else
+        tag.recordingTime = it->second.Airdate();
       tag.iDuration = it->second.Duration();
       tag.iPlayCount = it->second.IsWatched() ? 1 : 0;
       //@TODO: tag.iLastPlayedPosition
