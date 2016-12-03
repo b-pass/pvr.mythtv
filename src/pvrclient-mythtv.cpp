@@ -1367,10 +1367,10 @@ PVR_ERROR PVRClientMythTV::GetRecordingEdl(const PVR_RECORDING &recording, PVR_E
   {
     unit = 0; // marks are based on framecount
     // Check required props else return
-    rate = prog.GetPropsVideoFrameRate();
-    XBMC->Log(LOG_DEBUG, "%s: AV props: Frame Rate = %.3f", __FUNCTION__, rate);
-    if (rate <= 0)
-      return PVR_ERROR_NO_ERROR;
+    //rate = prog.GetPropsVideoFrameRate();
+    //XBMC->Log(LOG_DEBUG, "%s: AV props: Frame Rate = %.3f", __FUNCTION__, rate);
+    //if (rate <= 0)
+    //  return PVR_ERROR_NO_ERROR;
   }
 
   // Search for marks with defined unit
