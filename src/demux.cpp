@@ -20,7 +20,7 @@
  *
  */
 
-#include <p8-platform/os.h>
+#include <platform/os.h>
 #include <libXBMC_pvr.h>
 #include <xbmc_codec_types.h>
 

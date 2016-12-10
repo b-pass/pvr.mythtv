@@ -26,7 +26,7 @@
 #include "MythChannel.h"
 
 #include <xbmc_pvr_types.h>
-#include <p8-platform/threads/mutex.h>
+#include <platform/threads/mutex.h>
 
 #include <vector>
 #include <list>

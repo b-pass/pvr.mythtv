@@ -25,7 +25,7 @@
 #include "cppmyth/MythProgramInfo.h"
 
 #include <mythwsapi.h>
-#include <p8-platform/threads/threads.h>
+#include <platform/threads/threads.h>
 
 #include <string>
 #include <vector>

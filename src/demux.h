@@ -25,9 +25,9 @@
 #include "client.h"
 
 #include <mythstream.h>
-#include <p8-platform/threads/threads.h>
-#include <p8-platform/threads/mutex.h>
-#include <p8-platform/util/buffer.h>
+#include <platform/threads/threads.h>
+#include <platform/threads/mutex.h>
+#include <platform/util/buffer.h>
 
 #include <map>
 #include <set>

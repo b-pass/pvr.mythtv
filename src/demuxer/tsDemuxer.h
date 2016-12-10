@@ -24,7 +24,7 @@
 
 #include "tsPacket.h"
 #include "elementaryStream.h"
-#include <p8-platform/threads/mutex.h>
+#include <platform/threads/mutex.h>
 
 #include <map>
 #include <vector>
