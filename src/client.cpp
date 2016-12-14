@@ -336,7 +336,7 @@ ADDON_STATUS ADDON_Create(void *hdl, void *props)
   {
     /* If setting is unknown fallback to defaults */
     XBMC->Log(LOG_ERROR, "Couldn't get 'prompt_delete' setting, falling back to '%b' as default", DEFAULT_PROMPT_DELETE);
-    g_bUseAirdate = DEFAULT_PROMPT_DELETE;
+    g_bPromptDeleteAtEnd = DEFAULT_PROMPT_DELETE;
   }
 
   free (buffer);
