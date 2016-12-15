@@ -42,7 +42,6 @@ PVRClientMythTV::PVRClientMythTV()
 , m_dummyStream(NULL)
 , m_hang(false)
 , m_powerSaving(false)
-, m_deleteThread(NULL)
 , m_fileOps(NULL)
 , m_scheduleManager(NULL)
 , m_demux(NULL)
@@ -56,7 +55,6 @@ PVRClientMythTV::PVRClientMythTV()
 
 PVRClientMythTV::~PVRClientMythTV()
 {
-  SAFE_DELETE(m_deleteThread);
   SAFE_DELETE(m_demux);
   SAFE_DELETE(m_dummyStream);
   SAFE_DELETE(m_liveStream);
@@ -1212,19 +1210,33 @@ PVR_ERROR PVRClientMythTV::SetRecordingPlayCount(const PVR_RECORDING &recording,
       if (g_bExtraDebug)
         XBMC->Log(LOG_DEBUG, "%s: Set watched state for %s", __FUNCTION__, recording.strRecordingId);
       ForceUpdateRecording(it);
-      return PVR_ERROR_NO_ERROR;
     }
     else
     {
       XBMC->Log(LOG_DEBUG, "%s: Failed setting watched state for: %s", __FUNCTION__, recording.strRecordingId);
-      return PVR_ERROR_NO_ERROR;
     }
+
+    if (g_bPromptDeleteAtEnd && count > 0)
+    {
+      std::string dispTitle = MakeProgramTitle(it->second.Title(), it->second.Subtitle());
+      if (GUI->Dialog_YesNo_ShowAndGetInput(XBMC->GetLocalizedString(122),
+	    XBMC->GetLocalizedString(19112), "", dispTitle.c_str(),
+	    "", XBMC->GetLocalizedString(117)))
+      {
+	if (m_control->DeleteRecording(*(it->second.GetPtr())))
+	  XBMC->Log(LOG_DEBUG, "%s: Deleted recording %s", __FUNCTION__, it->first.c_str());
+	else
+	  XBMC->Log(LOG_ERROR, "%s: Failed to delete recording %s", __FUNCTION__, it->first.c_str());
+      }
+    }
+
+    return PVR_ERROR_NO_ERROR;
   }
   else
   {
     XBMC->Log(LOG_DEBUG, "%s: Recording %s does not exist", __FUNCTION__, recording.strRecordingId);
+    return PVR_ERROR_FAILED;
   }
-  return PVR_ERROR_FAILED;
 }
 
 PVR_ERROR PVRClientMythTV::SetRecordingLastPlayedPosition(const PVR_RECORDING &recording, int lastplayedposition)
@@ -2238,7 +2250,6 @@ bool PVRClientMythTV::OpenRecordedStream(const PVR_RECORDING &recording)
         XBMC->Log(LOG_DEBUG, "%s: Done", __FUNCTION__);
       // Fill AV info for later use
       FillRecordingAVInfo(prog, m_recordingStream);
-      m_streamRecordingId = recording.strRecordingId;
       return true;
     }
   }
@@ -2257,7 +2268,6 @@ bool PVRClientMythTV::OpenRecordedStream(const PVR_RECORDING &recording)
           XBMC->Log(LOG_DEBUG, "%s: Done", __FUNCTION__);
         // Fill AV info for later use
         FillRecordingAVInfo(prog, m_recordingStream);
-	m_streamRecordingId = recording.strRecordingId;
         return true;
       }
       SAFE_DELETE(m_recordingStream);
@@ -2285,7 +2295,6 @@ bool PVRClientMythTV::OpenRecordedStream(const PVR_RECORDING &recording)
         XBMC->Log(LOG_DEBUG, "%s: Done", __FUNCTION__);
       // Fill AV info for later use
       FillRecordingAVInfo(prog, m_recordingStream);
-      m_streamRecordingId = recording.strRecordingId;
       return true;
     }
   }
@@ -2298,32 +2307,6 @@ bool PVRClientMythTV::OpenRecordedStream(const PVR_RECORDING &recording)
   return false;
 }
 
-struct RecordingDeleter : P8PLATFORM::CThread
-{
-  PVRClientMythTV *m_parent;
-  std::string m_recId, m_recName;
-  RecordingDeleter(PVRClientMythTV *parent, std::string const &recId, std::string const &recName)
-    : m_parent(parent)
-    , m_recId(recId)
-    , m_recName(recName)
-  {}
-
-  void *Process()
-  {
-    if (GUI->Dialog_YesNo_ShowAndGetInput(XBMC->GetLocalizedString(122),
-	  XBMC->GetLocalizedString(19112), "", m_recName.c_str(),
-	  "", XBMC->GetLocalizedString(117)))
-    {
-      PVR_RECORDING rec;
-      memset(&rec, 0, sizeof(rec));
-      strncpy(rec.strRecordingId, m_recId.c_str(), sizeof(rec.strRecordingId));
-      m_parent->DeleteRecording(rec);
-    }
-
-    return NULL;
-  }
-};
-
 void PVRClientMythTV::CloseRecordedStream()
 {
   if (g_bExtraDebug)
@@ -2331,27 +2314,8 @@ void PVRClientMythTV::CloseRecordedStream()
 
   // Begin critical section
   CLockObject lock(m_lock);
-
-  if (g_bPromptDeleteAtEnd && m_recordingStream &&
-      (m_recordingStream->GetPosition()*100 / m_recordingStream->GetSize()) >= 95)
-  {
-    SAFE_DELETE(m_deleteThread); //clean up any old one that ran previously
-
-    ProgramInfoMap::iterator it = m_recordings.find(m_streamRecordingId);
-    if (it == m_recordings.end())
-    {
-      XBMC->Log(LOG_ERROR,"%s: Recording not found", __FUNCTION__);
-    }
-    else
-    {
-      m_deleteThread = new RecordingDeleter(this, m_streamRecordingId, MakeProgramTitle(it->second.Title(), it->second.Subtitle()));
-      m_deleteThread->CreateThread(false);
-    }
-  }
-
   // Destroy my stream
   SAFE_DELETE(m_recordingStream);
-  m_streamRecordingId.clear();
   // Resume fileOps
   if (m_fileOps)
     m_fileOps->Resume();

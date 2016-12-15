@@ -159,8 +159,6 @@ private:
   FileStreaming *m_dummyStream;
   bool m_hang;
   bool m_powerSaving;
-  std::string m_streamRecordingId;
-  P8PLATFORM::CThread *m_deleteThread;
 
   // Backend
   FileOps *m_fileOps;
