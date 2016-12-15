@@ -764,7 +764,7 @@ PVR_ERROR GetAddonCapabilities(PVR_ADDON_CAPABILITIES *pCapabilities)
 
     pCapabilities->bSupportsRecordings            = true;
     pCapabilities->bSupportsRecordingsUndelete    = true;
-    pCapabilities->bSupportsRecordingPlayCount    = (version < 80 ? false : true);
+    pCapabilities->bSupportsRecordingPlayCount    = true;//(version < 80 ? false : true);
     pCapabilities->bSupportsLastPlayedPosition    = (version < 88 ? false : true);
     pCapabilities->bSupportsRecordingEdl          = true;
     return PVR_ERROR_NO_ERROR;
