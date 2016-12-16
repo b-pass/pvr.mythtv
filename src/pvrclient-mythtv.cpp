@@ -887,9 +887,7 @@ PVR_ERROR PVRClientMythTV::GetRecordings(ADDON_HANDLE handle)
       PVR_STRCPY(tag.strPlot, it->second.Description().c_str());
       PVR_STRCPY(tag.strChannelName, it->second.ChannelName().c_str());
       tag.iChannelUid = FindPVRChannelUid(it->second.ChannelID());
-
-      /* TODO: PVR API 5.1.0: Implement this */
-      tag.channelType = PVR_RECORDING_CHANNEL_TYPE_UNKNOWN;
+      tag.channelType = PVR_RECORDING_CHANNEL_TYPE_TV;
 
       int genre = m_categories.Category(it->second.Category());
       tag.iGenreSubType = genre&0x0F;
@@ -1005,6 +1003,8 @@ PVR_ERROR PVRClientMythTV::GetDeletedRecordings(ADDON_HANDLE handle)
       }
       PVR_STRCPY(tag.strPlot, it->second.Description().c_str());
       PVR_STRCPY(tag.strChannelName, it->second.ChannelName().c_str());
+      tag.iChannelUid = FindPVRChannelUid(it->second.ChannelID());
+      tag.channelType = PVR_RECORDING_CHANNEL_TYPE_TV;
 
       int genre = m_categories.Category(it->second.Category());
       tag.iGenreSubType = genre&0x0F;
@@ -1073,7 +1073,6 @@ void PVRClientMythTV::ForceUpdateRecording(ProgramInfoMap::iterator it)
     MythProgramInfo prog(m_control->GetRecorded(it->second.ChannelID(), it->second.RecordingStartTime()));
     if (!prog.IsNull())
     {
-      CLockObject lock(m_recordingsLock);
       // Copy props
       prog.CopyProps(it->second);
       // Update recording
@@ -1219,13 +1218,13 @@ PVR_ERROR PVRClientMythTV::SetRecordingPlayCount(const PVR_RECORDING &recording,
     {
       std::string dispTitle = MakeProgramTitle(it->second.Title(), it->second.Subtitle());
       if (GUI->Dialog_YesNo_ShowAndGetInput(XBMC->GetLocalizedString(122),
-	    XBMC->GetLocalizedString(19112), "", dispTitle.c_str(),
-	    "", XBMC->GetLocalizedString(117)))
+              XBMC->GetLocalizedString(19112), "", dispTitle.c_str(),
+              "", XBMC->GetLocalizedString(117)))
       {
-	if (m_control->DeleteRecording(*(it->second.GetPtr())))
-	  XBMC->Log(LOG_DEBUG, "%s: Deleted recording %s", __FUNCTION__, it->first.c_str());
-	else
-	  XBMC->Log(LOG_ERROR, "%s: Failed to delete recording %s", __FUNCTION__, it->first.c_str());
+        if (m_control->DeleteRecording(*(it->second.GetPtr())))
+          XBMC->Log(LOG_DEBUG, "%s: Deleted recording %s", __FUNCTION__, it->first.c_str());
+        else
+          XBMC->Log(LOG_ERROR, "%s: Failed to delete recording %s", __FUNCTION__, it->first.c_str());
       }
     }
 
@@ -1328,10 +1327,10 @@ PVR_ERROR PVRClientMythTV::GetRecordingEdl(const PVR_RECORDING &recording, PVR_E
   {
     unit = 0; // marks are based on framecount
     // Check required props else return
-    //rate = prog.GetPropsVideoFrameRate();
-    //XBMC->Log(LOG_DEBUG, "%s: AV props: Frame Rate = %.3f", __FUNCTION__, rate);
-    //if (rate <= 0)
-    //  return PVR_ERROR_NO_ERROR;
+    rate = prog.GetPropsVideoFrameRate();
+    XBMC->Log(LOG_DEBUG, "%s: AV props: Frame Rate = %.3f", __FUNCTION__, rate);
+    if (rate <= 0)
+      return PVR_ERROR_NO_ERROR;
   }
 
   // Search for marks with defined unit
