@@ -47,17 +47,8 @@ public:
   virtual ~PVRClientMythTV();
 
   // Server
-  typedef enum
-  {
-    CONN_ERROR_NO_ERROR,
-    CONN_ERROR_SERVER_UNREACHABLE,
-    CONN_ERROR_UNKNOWN_VERSION,
-    CONN_ERROR_API_UNAVAILABLE,
-  } CONN_ERROR;
-
   void SetDebug();
-  bool Connect();
-  CONN_ERROR GetConnectionError() const;
+  void BeginConnect();
   unsigned GetBackendAPIVersion();
   const char *GetBackendName();
   const char *GetBackendVersion();
@@ -150,7 +141,6 @@ public:
   void AllowBackendShutdown();
 
 private:
-  CONN_ERROR m_connectionError;
   Myth::EventHandler *m_eventHandler;
   Myth::Control *m_control;
   Myth::LiveTVPlayback *m_liveStream;

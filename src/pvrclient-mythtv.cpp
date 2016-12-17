@@ -33,8 +33,7 @@ using namespace ADDON;
 using namespace P8PLATFORM;
 
 PVRClientMythTV::PVRClientMythTV()
-: m_connectionError(CONN_ERROR_NO_ERROR)
-, m_eventHandler(NULL)
+: m_eventHandler(NULL)
 , m_control(NULL)
 , m_liveStream(NULL)
 , m_recordingStream(NULL)
@@ -105,35 +104,15 @@ void PVRClientMythTV::SetDebug()
   Myth::SetDBGMsgCallback(Log);
 }
 
-bool PVRClientMythTV::Connect()
+void PVRClientMythTV::BeginConnect()
 {
   SetDebug();
-  m_control = new Myth::Control(g_szMythHostname, g_iProtoPort, g_iWSApiPort, g_szWSSecurityPin, g_bBlockMythShutdown);
-  if (!m_control->IsOpen())
-  {
-    switch(m_control->GetProtoError())
-    {
-      case Myth::ProtoBase::ERROR_UNKNOWN_VERSION:
-        m_connectionError = CONN_ERROR_UNKNOWN_VERSION;
-        break;
-      default:
-        m_connectionError = CONN_ERROR_SERVER_UNREACHABLE;
-    }
-    SAFE_DELETE(m_control);
-    XBMC->Log(LOG_ERROR, "Failed to connect to MythTV backend on %s:%d", g_szMythHostname.c_str(), g_iProtoPort);
-    // Try wake up for the next attempt
-    if (!g_szMythHostEther.empty())
-      XBMC->WakeOnLan(g_szMythHostEther.c_str());
-    return false;
-  }
-  if (!m_control->CheckService())
-  {
-    m_connectionError = CONN_ERROR_API_UNAVAILABLE;
-    SAFE_DELETE(m_control);
-    XBMC->Log(LOG_ERROR,"Failed to connect to MythTV backend on %s:%d with pin %s", g_szMythHostname.c_str(), g_iWSApiPort, g_szWSSecurityPin.c_str());
-    return false;
-  }
-  m_connectionError = CONN_ERROR_NO_ERROR;
+
+  // try to wake the backend in case it was sleeping
+  if (!m_powerSaving && !g_szMythHostEther.empty())
+    XBMC->WakeOnLan(g_szMythHostEther.c_str());
+
+  PVR->ConnectionStateChange(GetConnectionString(), PVR_CONNECTION_STATE_CONNECTING, "");
 
   // Create event handler and subscription as needed
   unsigned subid = 0;
@@ -154,12 +133,6 @@ bool PVRClientMythTV::Connect()
 
   // Start event handler
   m_eventHandler->Start();
-  return true;
-}
-
-PVRClientMythTV::CONN_ERROR PVRClientMythTV::GetConnectionError() const
-{
-  return m_connectionError;
 }
 
 unsigned PVRClientMythTV::GetBackendAPIVersion()
@@ -194,10 +167,10 @@ const char *PVRClientMythTV::GetBackendVersion()
 
 const char *PVRClientMythTV::GetConnectionString()
 {
+  //static std::string myConnectionString = std::string(g_szMythHostname) + ":" + Myth::IntToString(g_iWSApiPort) + "+" + Myth::IntToString(g_iProtoPort);
   static std::string myConnectionString;
   myConnectionString.clear();
   myConnectionString.append("http://").append(g_szMythHostname).append(":").append(Myth::IntToString(g_iWSApiPort));
-  XBMC->Log(LOG_DEBUG, "%s: %s", __FUNCTION__, myConnectionString.c_str());
   return myConnectionString.c_str();
 }
 
@@ -275,28 +248,62 @@ void PVRClientMythTV::HandleBackendMessage(Myth::EventMessagePtr msg)
     case Myth::EVENT_HANDLER_STATUS:
       if (msg->subject[0] == EVENTHANDLER_DISCONNECTED)
       {
+        // Connection to MythTV backend lost
+        PVR->ConnectionStateChange(GetConnectionString(), PVR_CONNECTION_STATE_DISCONNECTED, XBMC->GetLocalizedString(30302));
+        XBMC->Log(LOG_DEBUG, "Lost connection to MythTV backend on %s:%d", g_szMythHostname.c_str(), g_iWSApiPort);
         m_hang = true;
         if (m_control)
           m_control->Close();
         if (m_scheduleManager)
           m_scheduleManager->CloseControl();
-        XBMC->QueueNotification(QUEUE_ERROR, XBMC->GetLocalizedString(30302)); // Connection to MythTV backend lost
       }
       else if (msg->subject[0] == EVENTHANDLER_CONNECTED)
       {
-        if (m_hang)
+        if (!m_control)
+          m_control = new Myth::Control(g_szMythHostname, g_iProtoPort, g_iWSApiPort, g_szWSSecurityPin, g_bBlockMythShutdown);
+        else
+          m_control->Open();
+        if (!m_control->IsOpen())
         {
-          if (m_control)
-            m_control->Open();
-          if (m_scheduleManager)
-            m_scheduleManager->OpenControl();
-          m_hang = false;
-          XBMC->QueueNotification(QUEUE_INFO, XBMC->GetLocalizedString(30303)); // Connection to MythTV restored
+          if (m_control->GetProtoError() == Myth::ProtoBase::ERROR_UNKNOWN_VERSION)
+          {
+            PVR->ConnectionStateChange(GetConnectionString(), PVR_CONNECTION_STATE_VERSION_MISMATCH, XBMC->GetLocalizedString(30300));
+          }
+          else
+          {
+            PVR->ConnectionStateChange(GetConnectionString(), PVR_CONNECTION_STATE_SERVER_UNREACHABLE, XBMC->GetLocalizedString(30301));
+            // Try wake up if GUI is activated
+            if (!m_powerSaving && !g_szMythHostEther.empty())
+              XBMC->WakeOnLan(g_szMythHostEther.c_str());
+          }
+          XBMC->Log(LOG_ERROR, "Failed to connect to MythTV backend on %s:%d", g_szMythHostname.c_str(), g_iProtoPort);
+          return;
         }
+        if (!m_control->CheckService())
+        {
+          PVR->ConnectionStateChange(GetConnectionString(), PVR_CONNECTION_STATE_ACCESS_DENIED, XBMC->GetLocalizedString(30301));
+          XBMC->Log(LOG_ERROR,"Failed to connect to MythTV backend on %s:%d with pin %s", g_szMythHostname.c_str(), g_iWSApiPort, g_szWSSecurityPin.c_str());
+          return;
+        }
+        XBMC->Log(LOG_DEBUG, "Connected MythTV backend on %s:%d", g_szMythHostname.c_str(), g_iWSApiPort);
+        PVR->ConnectionStateChange(GetBackendName(), PVR_CONNECTION_STATE_CONNECTED, GetBackendVersion());
+
+        // Send correct Live TV Priority to backend
+        bool savedLiveTVPriority;
+        if (!XBMC->GetSetting("livetv_priority", &savedLiveTVPriority))
+          savedLiveTVPriority = DEFAULT_LIVETV_PRIORITY;
+        g_bLiveTVPriority = GetLiveTVPriority();
+        if (g_bLiveTVPriority != savedLiveTVPriority)
+          SetLiveTVPriority(savedLiveTVPriority);
+
+        if (m_scheduleManager)
+          m_scheduleManager->OpenControl();
+
         // Refreshing all
         HandleChannelChange();
         HandleScheduleChange();
         HandleRecordingListChange(Myth::EventMessage());
+        m_hang = false;
       }
       else if (msg->subject[0] == EVENTHANDLER_NOTCONNECTED)
       {
