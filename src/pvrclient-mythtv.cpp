@@ -2581,8 +2581,9 @@ void PVRClientMythTV::FillRecordingAVInfo(MythProgramInfo& programInfo, Myth::St
 
 time_t PVRClientMythTV::GetRecordingTime(time_t airtt, time_t recordingtt)
 {
-  if (!g_bUseAirdate || airtt == 0)
-    return recordingtt;
+  // NOTE: Kodi wants everything in local time, MythTV has everything in UTC
+  struct tm rectm;
+  localtime_r(&recordingtt, &rectm);
 
   /* Airdate is usually a Date, not a time.  So we include the time part from
   the recording time in order to give the reported time something other than
@@ -2590,13 +2591,17 @@ time_t PVRClientMythTV::GetRecordingTime(time_t airtt, time_t recordingtt)
   in the correct time order.  Combining airdate and recording time gives us
   the best possible time to report to the user to allow them to sort by
   datetime to see the correct episode ordering. */
-  struct tm airtm, rectm;
-  gmtime_r(&airtt, &airtm);
-  gmtime_r(&recordingtt, &rectm);
-
-  airtm.tm_hour = rectm.tm_hour;
-  airtm.tm_min = rectm.tm_min;
-  airtm.tm_sec = rectm.tm_sec;
-
-  return mktime(&airtm);
+  if (g_bUseAirdate && airtt != 0)
+  {
+    struct tm airtm;
+    localtime_r(&airtt, &airtm);
+    airtm.tm_hour = rectm.tm_hour;
+    airtm.tm_min = rectm.tm_min;
+    airtm.tm_sec = rectm.tm_sec;
+    return mktime(&airtm);
+  }
+  else
+  {
+    return mktime(&rectm);
+  }
 }
