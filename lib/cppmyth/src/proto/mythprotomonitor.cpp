@@ -442,7 +442,7 @@ MarkListPtr ProtoMonitor::GetCommBreakList75(const Program& program)
   uint32_to_string(program.channel.chanId, buf);
   cmd.append(buf).append(" ");
   int64_to_string(program.recording.startTs, buf);
-  cmd.append(buf).append(" 2");
+  cmd.append(buf);
 
   if (!SendCommand(cmd.c_str()))
     return list;
