@@ -92,6 +92,7 @@ MythTimerTypeList MythScheduleHelper75::GetTimerTypes() const
             PVR_TIMER_TYPE_SUPPORTS_ENABLE_DISABLE |
             PVR_TIMER_TYPE_SUPPORTS_TITLE_EPG_MATCH |
             PVR_TIMER_TYPE_SUPPORTS_CHANNELS |
+            PVR_TIMER_TYPE_SUPPORTS_ANY_CHANNEL |
             PVR_TIMER_TYPE_SUPPORTS_RECORD_ONLY_NEW_EPISODES |
             PVR_TIMER_TYPE_SUPPORTS_START_END_MARGIN |
             PVR_TIMER_TYPE_SUPPORTS_PRIORITY |
@@ -112,6 +113,7 @@ MythTimerTypeList MythScheduleHelper75::GetTimerTypes() const
             PVR_TIMER_TYPE_SUPPORTS_ENABLE_DISABLE |
             PVR_TIMER_TYPE_SUPPORTS_TITLE_EPG_MATCH |
             PVR_TIMER_TYPE_SUPPORTS_CHANNELS |
+            PVR_TIMER_TYPE_SUPPORTS_ANY_CHANNEL |
             PVR_TIMER_TYPE_SUPPORTS_START_TIME |
             PVR_TIMER_TYPE_SUPPORTS_END_TIME |
             PVR_TIMER_TYPE_SUPPORTS_FIRST_DAY |
@@ -134,6 +136,7 @@ MythTimerTypeList MythScheduleHelper75::GetTimerTypes() const
             PVR_TIMER_TYPE_SUPPORTS_ENABLE_DISABLE |
             PVR_TIMER_TYPE_SUPPORTS_TITLE_EPG_MATCH |
             PVR_TIMER_TYPE_SUPPORTS_CHANNELS |
+            PVR_TIMER_TYPE_SUPPORTS_ANY_CHANNEL |
             PVR_TIMER_TYPE_SUPPORTS_START_TIME |
             PVR_TIMER_TYPE_SUPPORTS_END_TIME |
             PVR_TIMER_TYPE_SUPPORTS_FIRST_DAY |
@@ -157,6 +160,7 @@ MythTimerTypeList MythScheduleHelper75::GetTimerTypes() const
             PVR_TIMER_TYPE_SUPPORTS_ENABLE_DISABLE |
             PVR_TIMER_TYPE_SUPPORTS_TITLE_EPG_MATCH |
             PVR_TIMER_TYPE_SUPPORTS_CHANNELS |
+            PVR_TIMER_TYPE_SUPPORTS_ANY_CHANNEL |
             PVR_TIMER_TYPE_SUPPORTS_RECORD_ONLY_NEW_EPISODES |
             PVR_TIMER_TYPE_SUPPORTS_START_END_MARGIN |
             PVR_TIMER_TYPE_SUPPORTS_PRIORITY |
@@ -196,6 +200,7 @@ MythTimerTypeList MythScheduleHelper75::GetTimerTypes() const
             PVR_TIMER_TYPE_SUPPORTS_ENABLE_DISABLE |
             PVR_TIMER_TYPE_SUPPORTS_TITLE_EPG_MATCH |
             PVR_TIMER_TYPE_SUPPORTS_CHANNELS |
+            PVR_TIMER_TYPE_SUPPORTS_ANY_CHANNEL |
             PVR_TIMER_TYPE_SUPPORTS_RECORD_ONLY_NEW_EPISODES |
             PVR_TIMER_TYPE_SUPPORTS_START_END_MARGIN |
             PVR_TIMER_TYPE_SUPPORTS_PRIORITY |
@@ -216,6 +221,7 @@ MythTimerTypeList MythScheduleHelper75::GetTimerTypes() const
             PVR_TIMER_TYPE_SUPPORTS_ENABLE_DISABLE |
             PVR_TIMER_TYPE_SUPPORTS_TITLE_EPG_MATCH |
             PVR_TIMER_TYPE_SUPPORTS_CHANNELS |
+            PVR_TIMER_TYPE_SUPPORTS_ANY_CHANNEL |
             PVR_TIMER_TYPE_SUPPORTS_RECORD_ONLY_NEW_EPISODES |
             PVR_TIMER_TYPE_SUPPORTS_START_END_MARGIN |
             PVR_TIMER_TYPE_SUPPORTS_PRIORITY |
@@ -468,6 +474,9 @@ bool MythScheduleHelper75::FillTimerEntryWithRule(MythTimerEntry& entry, const M
 {
   // Assign timer type regarding rule attributes. The match SHOULD be opposite to
   // that which is applied in function 'NewFromTimer'
+
+  // Check rule flag for this entry
+  entry.isRule = true;
 
   MythRecordingRule rule = node.GetRule();
   if (g_bExtraDebug)
@@ -862,6 +871,11 @@ MythRecordingRule MythScheduleHelper75::NewFromTimer(const MythTimerEntry& entry
 
   MythRecordingRule rule;
   XBMC->Log(LOG_DEBUG, "75::%s", __FUNCTION__);
+  // default required fields start, end time
+  time_t now = time(0);
+  rule.SetStartTime(now);
+  rule.SetEndTime(now);
+
   if (withTemplate)
   {
     // Base on template
@@ -1316,7 +1330,7 @@ const MythTimerType::AttributeList& MythScheduleHelper75::GetRulePriorityList() 
 {
   if (!m_priorityListInit)
   {
-    char buf[4];
+    char buf[5];
     m_priorityListInit = true;
     m_priorityList.reserve(200);
     memset(buf, 0, sizeof(buf));

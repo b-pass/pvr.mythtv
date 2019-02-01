@@ -1,11 +1,14 @@
 project(pvr.mythtv)
 
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.1.0)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR})
 
 enable_language(CXX)
 enable_language(C)
+
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Kodi REQUIRED)
 find_package(kodiplatform REQUIRED)
@@ -24,35 +27,15 @@ if(NOT WIN32)
   add_options(ALL_LANGUAGES ALL_BUILDS "-fPIC -Wall")
 endif()
 
-set(MYTHTV_SOURCES src/avinfo.cpp
-                   src/categories.cpp
-                   src/demuxer/ES_AAC.cpp
-                   src/demuxer/ES_MPEGAudio.cpp
-                   src/demuxer/bitstream.cpp
-                   src/demuxer/ES_Teletext.cpp
-                   src/demuxer/debug.cpp
-                   src/demuxer/ES_Subtitle.cpp
-                   src/demuxer/ES_h264.cpp
-                   src/demuxer/ES_AC3.cpp
-                   src/demuxer/elementaryStream.cpp
-                   src/demuxer/ES_MPEGVideo.cpp
-                   src/demuxer/tsDemuxer.cpp
-                   src/demux.cpp
-                   src/guidialogbase.cpp
-                   src/guidialogyesno.cpp
-                   src/pvrclient-mythtv.cpp
-                   src/cppmyth/MythScheduleManager.cpp
-                   src/cppmyth/MythScheduleHelperNoHelper.cpp
-                   src/cppmyth/MythScheduleHelper75.cpp
-                   src/cppmyth/MythScheduleHelper76.cpp
-                   src/cppmyth/MythScheduleHelper85.cpp
-                   src/cppmyth/MythEPGInfo.cpp
-                   src/cppmyth/MythRecordingRule.cpp
-                   src/cppmyth/MythProgramInfo.cpp
-                   src/cppmyth/MythChannel.cpp
-                   src/client.cpp
-                   src/fileOps.cpp
-                   src/filestreaming.cpp)
+file (GLOB MYTHTV_SOURCES
+  src/demuxer/*.cpp
+  src/cppmyth/*.cpp
+  src/*.cpp)
+
+file (GLOB MYTHTV_HEADERS
+  src/demuxer/*.h
+  src/cppmyth/*.h
+  src/*.h)
 
 add_subdirectory(lib/cppmyth)
 

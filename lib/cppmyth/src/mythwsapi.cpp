@@ -20,19 +20,20 @@
  */
 
 #include "mythwsapi.h"
-#include "mythdebug.h"
-#include "private/mythsocket.h"
-#include "private/mythwsrequest.h"
-#include "private/mythwsresponse.h"
-#include "private/mythjsonparser.h"
+#include "private/debug.h"
+#include "private/socket.h"
+#include "private/wsrequest.h"
+#include "private/wsresponse.h"
+#include "private/jsonparser.h"
 #include "private/mythjsonbinder.h"
 #include "private/os/threads/mutex.h"
 #include "private/cppdef.h"
 #include "private/builtin.h"
-#include "private/mythuriparser.h"
+#include "private/uriparser.h"
 
 #define BOOLSTR(a)  ((a) ? "true" : "false")
 #define FETCHSIZE   100
+#define FETCHSIZE_L 1000
 
 using namespace Myth;
 
@@ -42,6 +43,8 @@ using namespace Myth;
 #define WS_ROOT_GUIDE         "/Guide"
 #define WS_ROOT_CONTENT       "/Content"
 #define WS_ROOT_DVR           "/Dvr"
+
+static std::string encodeParam(const std::string& str);
 
 WSAPI::WSAPI(const std::string& server, unsigned port, const std::string& securityPin)
 : m_mutex(new OS::CMutex)
@@ -69,7 +72,7 @@ bool WSAPI::InitWSAPI()
   WSServiceVersion_t& mythwsv = m_serviceVersion[WS_Myth];
   if (!GetServiceVersion(WS_Myth, mythwsv))
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   if (mythwsv.ranking > MYTH_API_VERSION_MAX_RANKING) {}
@@ -85,13 +88,13 @@ bool WSAPI::InitWSAPI()
         GetServiceVersion(WS_Content, m_serviceVersion[WS_Content]) &&
         GetServiceVersion(WS_Dvr, m_serviceVersion[WS_Dvr]))
     {
-      DBG(MYTH_DBG_INFO, "%s: MythTV API service is available: %s:%d(%s) protocol(%d) schema(%d)\n",
+      DBG(DBG_INFO, "%s: MythTV API service is available: %s:%d(%s) protocol(%d) schema(%d)\n",
               __FUNCTION__, m_serverHostName.c_str(), m_port, m_version.version.c_str(),
               (unsigned)m_version.protocol, (unsigned)m_version.schema);
       return true;
     }
   }
-  DBG(MYTH_DBG_ERROR, "%s: MythTV API service is not supported or unavailable: %s:%d (%u.%u)\n",
+  DBG(DBG_ERROR, "%s: MythTV API service is not supported or unavailable: %s:%d (%u.%u)\n",
           __FUNCTION__, m_server.c_str(), m_port, mythwsv.major, mythwsv.minor);
   return false;
 }
@@ -149,7 +152,7 @@ bool WSAPI::CheckServerHostName2_0()
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   // Parse content response
@@ -187,7 +190,7 @@ bool WSAPI::CheckVersion2_0()
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   // Parse content response
@@ -250,7 +253,7 @@ std::string WSAPI::ResolveHostName(const std::string& hostname)
   {
     std::string& ret = m_namedCache[hostname];
     ret.assign(addr->value);
-    DBG(MYTH_DBG_DEBUG, "%s: resolving hostname %s as %s\n", __FUNCTION__, hostname.c_str(), ret.c_str());
+    DBG(DBG_DEBUG, "%s: resolving hostname %s as %s\n", __FUNCTION__, hostname.c_str(), ret.c_str());
     return ret;
   }
   addr = this->GetSetting("BackendServerIP", hostname);
@@ -258,10 +261,10 @@ std::string WSAPI::ResolveHostName(const std::string& hostname)
   {
     std::string& ret = m_namedCache[hostname];
     ret.assign(addr->value);
-    DBG(MYTH_DBG_DEBUG, "%s: resolving hostname %s as %s\n", __FUNCTION__, hostname.c_str(), ret.c_str());
+    DBG(DBG_DEBUG, "%s: resolving hostname %s as %s\n", __FUNCTION__, hostname.c_str(), ret.c_str());
     return ret;
   }
-  DBG(MYTH_DBG_ERROR, "%s: unknown host (%s)\n", __FUNCTION__, hostname.c_str());
+  DBG(DBG_ERROR, "%s: unknown host (%s)\n", __FUNCTION__, hostname.c_str());
   return std::string();
 }
 
@@ -283,17 +286,17 @@ SettingPtr WSAPI::GetSetting2_0(const std::string& key, const std::string& hostn
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return ret;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return ret;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   // Object: SettingList
   const JSON::Node& slist = root.GetObjectValue("SettingList");
@@ -328,17 +331,17 @@ SettingPtr WSAPI::GetSetting5_0(const std::string& key, const std::string& hostn
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return ret;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return ret;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   // Object: String
   const JSON::Node& val = root.GetObjectValue("String");
@@ -371,17 +374,17 @@ SettingMapPtr WSAPI::GetSettings2_0(const std::string& hostname)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return ret;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return ret;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   // Object: SettingList
   const JSON::Node& slist = root.GetObjectValue("SettingList");
@@ -417,17 +420,17 @@ SettingMapPtr WSAPI::GetSettings5_0(const std::string& hostname)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return ret;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return ret;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   // Object: SettingList
   const JSON::Node& slist = root.GetObjectValue("SettingList");
@@ -474,17 +477,17 @@ bool WSAPI::PutSetting2_0(const std::string& key, const std::string& value, bool
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return false;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& field = root.GetObjectValue("bool");
   if (!field.IsString() || strcmp(field.GetStringValue().c_str(), "true"))
@@ -512,17 +515,17 @@ CaptureCardListPtr WSAPI::GetCaptureCardList1_4()
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return ret;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return ret;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   // Object: CaptureCardList
   const JSON::Node& clist = root.GetObjectValue("CaptureCardList");
@@ -560,17 +563,17 @@ VideoSourceListPtr WSAPI::GetVideoSourceList1_2()
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return ret;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return ret;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   // Object: VideoSourceList
   const JSON::Node& slist = root.GetObjectValue("VideoSourceList");
@@ -615,21 +618,21 @@ ChannelListPtr WSAPI::GetChannelList1_2(uint32_t sourceid, bool onlyVisible)
     int32_to_string(req_count, buf);
     req.SetContentParam("Count", buf);
 
-    DBG(MYTH_DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
+    DBG(DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
     WSResponse resp(req);
     if (!resp.IsSuccessful())
     {
-      DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
       break;
     }
     const JSON::Document json(resp);
     const JSON::Node& root = json.GetRoot();
     if (!json.IsValid() || !root.IsObject())
     {
-      DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
       break;
     }
-    DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+    DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
     // Object: ChannelInfoList
     const JSON::Node& clist = root.GetObjectValue("ChannelInfoList");
@@ -656,7 +659,7 @@ ChannelListPtr WSAPI::GetChannelList1_2(uint32_t sourceid, bool onlyVisible)
       if (channel->chanId && (!onlyVisible || channel->visible))
         ret->push_back(channel);
     }
-    DBG(MYTH_DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
+    DBG(DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
     req_index += count; // Set next requested index
   }
   while (count == req_count);
@@ -693,21 +696,21 @@ ChannelListPtr WSAPI::GetChannelList1_5(uint32_t sourceid, bool onlyVisible)
     //int32_to_string(req_count, buf);
     //req.SetContentParam("Count", buf);
 
-    //DBG(MYTH_DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
+    //DBG(DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
     WSResponse resp(req);
     if (!resp.IsSuccessful())
     {
-      DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
       break;
     }
     const JSON::Document json(resp);
     const JSON::Node& root = json.GetRoot();
     if (!json.IsValid() || !root.IsObject())
     {
-      DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
       break;
     }
-    DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+    DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
     // Object: ChannelInfoList
     const JSON::Node& clist = root.GetObjectValue("ChannelInfoList");
@@ -734,7 +737,7 @@ ChannelListPtr WSAPI::GetChannelList1_5(uint32_t sourceid, bool onlyVisible)
       if (channel->chanId)
         ret->push_back(channel);
     }
-    DBG(MYTH_DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
+    DBG(DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
     req_index += count; // Set next requested index
   }
   //while (count == req_count);
@@ -762,17 +765,17 @@ ChannelPtr WSAPI::GetChannel1_2(uint32_t chanid)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return ret;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return ret;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   // Object: ChannelInfo
   const JSON::Node& chan = root.GetObjectValue("ChannelInfo");
@@ -788,6 +791,86 @@ ChannelPtr WSAPI::GetChannel1_2(uint32_t chanid)
 ////
 //// Guide service
 ////
+std::map<uint32_t, ProgramMapPtr> WSAPI::GetProgramGuide1_0(time_t starttime, time_t endtime)
+{
+  std::map<uint32_t, ProgramMapPtr> ret;
+  char buf[32];
+  int32_t count = 0;
+  unsigned proto = (unsigned)m_version.protocol;
+
+  // Get bindings for protocol version
+  const bindings_t *bindlist = MythDTO::getListBindArray(proto);
+  const bindings_t *bindchan = MythDTO::getChannelBindArray(proto);
+  const bindings_t *bindprog = MythDTO::getProgramBindArray(proto);
+
+  // Initialize request header
+  WSRequest req = WSRequest(m_server, m_port);
+  req.RequestAccept(CT_JSON);
+  req.RequestService("/Guide/GetProgramGuide");
+  req.SetContentParam("StartChanId", "0");
+  req.SetContentParam("NumChannels", "0");
+  time_to_iso8601utc(starttime, buf);
+  req.SetContentParam("StartTime", buf);
+  time_to_iso8601utc(endtime, buf);
+  req.SetContentParam("EndTime", buf);
+  req.SetContentParam("Details", "true");
+
+  WSResponse resp(req);
+  if (!resp.IsSuccessful())
+  {
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    return ret;
+  }
+  const JSON::Document json(resp);
+  const JSON::Node& root = json.GetRoot();
+  if (!json.IsValid() || !root.IsObject())
+  {
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    return ret;
+  }
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+
+  // Object: ProgramGuide
+  const JSON::Node& glist = root.GetObjectValue("ProgramGuide");
+  ItemList list = ItemList(); // Using default constructor
+  JSON::BindObject(glist, &list, bindlist);
+  // List has ProtoVer. Check it or sound alarm
+  if (list.protoVer != proto)
+  {
+    InvalidateService();
+    return ret;
+  }
+  // Object: Channels[]
+  const JSON::Node& chans = glist.GetObjectValue("Channels");
+  // Iterates over the sequence elements.
+  size_t cs = chans.Size();
+  for (size_t ci = 0; ci < cs; ++ci)
+  {
+    const JSON::Node& chan = chans.GetArrayElement(ci);
+    Channel channel;
+    JSON::BindObject(chan, &channel, bindchan);
+    ProgramMapPtr pmap(new ProgramMap);
+    ret.insert(std::make_pair(channel.chanId, pmap));
+    // Object: Programs[]
+    const JSON::Node& progs = chan.GetObjectValue("Programs");
+    // Iterates over the sequence elements.
+    size_t ps = progs.Size();
+    for (size_t pi = 0; pi < ps; ++pi)
+    {
+      ++count;
+      const JSON::Node& prog = progs.GetArrayElement(pi);
+      ProgramPtr program(new Program());  // Using default constructor
+      // Bind the new program
+      JSON::BindObject(prog, program.get(), bindprog);
+      program->channel = channel;
+      pmap->insert(std::make_pair(program->startTime, program));
+    }
+  }
+  DBG(DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
+
+  return ret;
+}
+
 ProgramMapPtr WSAPI::GetProgramGuide1_0(uint32_t chanid, time_t starttime, time_t endtime)
 {
   ProgramMapPtr ret(new ProgramMap);
@@ -816,17 +899,17 @@ ProgramMapPtr WSAPI::GetProgramGuide1_0(uint32_t chanid, time_t starttime, time_
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return ret;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return ret;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   // Object: ProgramGuide
   const JSON::Node& glist = root.GetObjectValue("ProgramGuide");
@@ -847,6 +930,8 @@ ProgramMapPtr WSAPI::GetProgramGuide1_0(uint32_t chanid, time_t starttime, time_
     const JSON::Node& chan = chans.GetArrayElement(ci);
     Channel channel;
     JSON::BindObject(chan, &channel, bindchan);
+    if (channel.chanId != chanid)
+      continue;
     // Object: Programs[]
     const JSON::Node& progs = chan.GetObjectValue("Programs");
     // Iterates over the sequence elements.
@@ -861,8 +946,106 @@ ProgramMapPtr WSAPI::GetProgramGuide1_0(uint32_t chanid, time_t starttime, time_
       program->channel = channel;
       ret->insert(std::make_pair(program->startTime, program));
     }
+    break;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
+  DBG(DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
+
+  return ret;
+}
+
+std::map<uint32_t, ProgramMapPtr> WSAPI::GetProgramGuide2_2(time_t starttime, time_t endtime)
+{
+  std::map<uint32_t, ProgramMapPtr> ret;
+  char buf[32];
+  uint32_t req_index = 0, req_count = FETCHSIZE, count = 0, total = 0;
+  unsigned proto = (unsigned)m_version.protocol;
+
+  // Adjust the fetch count according to the number of requested days
+  double d = difftime(endtime, starttime);
+  if (d > 0)
+    req_count = FETCHSIZE / (int)(1.0 + d / (3 * 86400));
+
+  // Get bindings for protocol version
+  const bindings_t *bindlist = MythDTO::getListBindArray(proto);
+  const bindings_t *bindprog = MythDTO::getProgramBindArray(proto);
+  const bindings_t *bindchan = MythDTO::getChannelBindArray(proto);
+
+  // Initialize request header
+  WSRequest req = WSRequest(m_server, m_port);
+  req.RequestAccept(CT_JSON);
+  req.RequestService("/Guide/GetProgramGuide");
+
+  do
+  {
+    req.ClearContent();
+    uint32_to_string(req_index, buf);
+    req.SetContentParam("StartIndex", buf);
+    uint32_to_string(req_count, buf);
+    req.SetContentParam("Count", buf);
+    time_to_iso8601utc(starttime, buf);
+    req.SetContentParam("StartTime", buf);
+    time_to_iso8601utc(endtime, buf);
+    req.SetContentParam("EndTime", buf);
+    req.SetContentParam("Details", "true");
+
+    DBG(DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
+    WSResponse resp(req);
+    if (!resp.IsSuccessful())
+    {
+      DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+      break;
+    }
+    const JSON::Document json(resp);
+    const JSON::Node& root = json.GetRoot();
+    if (!json.IsValid() || !root.IsObject())
+    {
+      DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+      break;
+    }
+    DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+
+    // Object: ProgramGuide
+    const JSON::Node& glist = root.GetObjectValue("ProgramGuide");
+    ItemList list = ItemList(); // Using default constructor
+    JSON::BindObject(glist, &list, bindlist);
+    // List has ProtoVer. Check it or sound alarm
+    if (list.protoVer != proto)
+    {
+      InvalidateService();
+      break;
+    }
+    count = 0;
+    // Object: Channels[]
+    const JSON::Node& chans = glist.GetObjectValue("Channels");
+    // Iterates over the sequence elements.
+    size_t cs = chans.Size();
+    for (size_t ci = 0; ci < cs; ++ci)
+    {
+      ++count;
+      const JSON::Node& chan = chans.GetArrayElement(ci);
+      Channel channel;
+      JSON::BindObject(chan, &channel, bindchan);
+      ProgramMapPtr pmap(new ProgramMap);
+      ret.insert(std::make_pair(channel.chanId, pmap));
+      // Object: Programs[]
+      const JSON::Node& progs = chan.GetObjectValue("Programs");
+      // Iterates over the sequence elements.
+      size_t ps = progs.Size();
+      for (size_t pi = 0; pi < ps; ++pi)
+      {
+        const JSON::Node& prog = progs.GetArrayElement(pi);
+        ProgramPtr program(new Program());  // Using default constructor
+        // Bind the new program
+        JSON::BindObject(prog, program.get(), bindprog);
+        program->channel = channel;
+        pmap->insert(std::make_pair(program->startTime, program));
+      }
+      ++total;
+    }
+    DBG(DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
+    req_index += count; // Set next requested index
+  }
+  while (count == req_count);
 
   return ret;
 }
@@ -871,7 +1054,7 @@ ProgramMapPtr WSAPI::GetProgramList2_2(uint32_t chanid, time_t starttime, time_t
 {
   ProgramMapPtr ret(new ProgramMap);
   char buf[32];
-  uint32_t req_index = 0, req_count = FETCHSIZE, count = 0, total = 0;
+  uint32_t req_index = 0, req_count = FETCHSIZE_L, count = 0, total = 0;
   unsigned proto = (unsigned)m_version.protocol;
 
   // Get bindings for protocol version
@@ -899,21 +1082,21 @@ ProgramMapPtr WSAPI::GetProgramList2_2(uint32_t chanid, time_t starttime, time_t
     req.SetContentParam("EndTime", buf);
     req.SetContentParam("Details", "true");
 
-    DBG(MYTH_DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
+    DBG(DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
     WSResponse resp(req);
     if (!resp.IsSuccessful())
     {
-      DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
       break;
     }
     const JSON::Document json(resp);
     const JSON::Node& root = json.GetRoot();
     if (!json.IsValid() || !root.IsObject())
     {
-      DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
       break;
     }
-    DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+    DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
     // Object: ProgramList
     const JSON::Node& plist = root.GetObjectValue("ProgramList");
@@ -943,7 +1126,7 @@ ProgramMapPtr WSAPI::GetProgramList2_2(uint32_t chanid, time_t starttime, time_t
       ret->insert(std::make_pair(program->startTime, program));
       ++total;
     }
-    DBG(MYTH_DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
+    DBG(DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
     req_index += count; // Set next requested index
   }
   while (count == req_count);
@@ -987,21 +1170,21 @@ ProgramListPtr WSAPI::GetRecordedList1_5(unsigned n, bool descending)
     req.SetContentParam("Count", buf);
     req.SetContentParam("Descending", BOOLSTR(descending));
 
-    DBG(MYTH_DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
+    DBG(DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
     WSResponse resp(req);
     if (!resp.IsSuccessful())
     {
-      DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
       break;
     }
     const JSON::Document json(resp);
     const JSON::Node& root = json.GetRoot();
     if (!json.IsValid() || !root.IsObject())
     {
-      DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
       break;
     }
-    DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+    DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
     // Object: ProgramList
     const JSON::Node& plist = root.GetObjectValue("ProgramList");
@@ -1044,7 +1227,7 @@ ProgramListPtr WSAPI::GetRecordedList1_5(unsigned n, bool descending)
       ret->push_back(program);
       ++total;
     }
-    DBG(MYTH_DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
+    DBG(DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
     req_index += count; // Set next requested index
   }
   while (count == req_count && (!n || n > total));
@@ -1074,17 +1257,17 @@ ProgramPtr WSAPI::GetRecorded1_5(uint32_t chanid, time_t recstartts)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return ret;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return ret;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& prog = root.GetObjectValue("Program");
   ProgramPtr program(new Program());  // Using default constructor
@@ -1132,17 +1315,17 @@ ProgramPtr WSAPI::GetRecorded6_0(uint32_t recordedid)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return ret;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return ret;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& prog = root.GetObjectValue("Program");
   ProgramPtr program(new Program());  // Using default constructor
@@ -1187,17 +1370,17 @@ bool WSAPI::DeleteRecording2_1(uint32_t chanid, time_t recstartts, bool forceDel
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return false;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& field = root.GetObjectValue("bool");
   if (!field.IsString() || strcmp(field.GetStringValue().c_str(), "true"))
@@ -1220,17 +1403,17 @@ bool WSAPI::DeleteRecording6_0(uint32_t recordedid, bool forceDelete, bool allow
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return false;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& field = root.GetObjectValue("bool");
   if (!field.IsString() || strcmp(field.GetStringValue().c_str(), "true"))
@@ -1253,17 +1436,17 @@ bool WSAPI::UnDeleteRecording2_1(uint32_t chanid, time_t recstartts)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return false;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& field = root.GetObjectValue("bool");
   if (!field.IsString() || strcmp(field.GetStringValue().c_str(), "true"))
@@ -1284,17 +1467,17 @@ bool WSAPI::UnDeleteRecording6_0(uint32_t recordedid)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return false;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& field = root.GetObjectValue("bool");
   if (!field.IsString() || strcmp(field.GetStringValue().c_str(), "true"))
@@ -1318,17 +1501,17 @@ bool WSAPI::UpdateRecordedWatchedStatus4_5(uint32_t chanid, time_t recstartts, b
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return false;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& field = root.GetObjectValue("bool");
   if (!field.IsString() || strcmp(field.GetStringValue().c_str(), "true"))
@@ -1350,17 +1533,17 @@ bool WSAPI::UpdateRecordedWatchedStatus6_0(uint32_t recordedid, bool watched)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return false;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& field = root.GetObjectValue("bool");
   if (!field.IsString() || strcmp(field.GetStringValue().c_str(), "true"))
@@ -1390,17 +1573,17 @@ MarkListPtr WSAPI::GetRecordedCommBreak6_1(uint32_t recordedid, int unit)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return ret;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return ret;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   // Object: 	CutList
   const JSON::Node& slist = root.GetObjectValue("CutList");
@@ -1441,17 +1624,17 @@ MarkListPtr WSAPI::GetRecordedCutList6_1(uint32_t recordedid, int unit)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return ret;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return ret;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   // Object: 	CutList
   const JSON::Node& slist = root.GetObjectValue("CutList");
@@ -1468,6 +1651,79 @@ MarkListPtr WSAPI::GetRecordedCutList6_1(uint32_t recordedid, int unit)
     ret->push_back(mark);
   }
   return ret;
+}
+
+bool WSAPI::SetSavedBookmark6_2(uint32_t recordedid, int unit, int64_t value)
+{
+  char buf[32];
+
+  // Initialize request header
+  WSRequest req = WSRequest(m_server, m_port);
+  req.RequestAccept(CT_JSON);
+  req.RequestService("/Dvr/SetSavedBookmark", HRM_POST);
+  uint32_to_string(recordedid, buf);
+  req.SetContentParam("RecordedId", buf);
+  if (unit == 2)
+    req.SetContentParam("OffsetType", "Duration");
+  else
+    req.SetContentParam("OffsetType", "Position");
+  int64_to_string(value, buf);
+  req.SetContentParam("Offset", buf);
+  WSResponse resp(req);
+  if (!resp.IsSuccessful())
+  {
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    return false;
+  }
+  const JSON::Document json(resp);
+  const JSON::Node& root = json.GetRoot();
+  if (!json.IsValid() || !root.IsObject())
+  {
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    return false;
+  }
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+
+  const JSON::Node& field = root.GetObjectValue("bool");
+  if (!field.IsString() || strcmp(field.GetStringValue().c_str(), "true"))
+    return false;
+  return true;
+}
+
+int64_t WSAPI::GetSavedBookmark6_2(uint32_t recordedid, int unit)
+{
+  char buf[32];
+
+  // Initialize request header
+  WSRequest req = WSRequest(m_server, m_port);
+  req.RequestAccept(CT_JSON);
+  req.RequestService("/Dvr/GetSavedBookmark", HRM_POST);
+  uint32_to_string(recordedid, buf);
+  req.SetContentParam("RecordedId", buf);
+  if (unit == 2)
+    req.SetContentParam("OffsetType", "Duration");
+  else
+    req.SetContentParam("OffsetType", "Position");
+  WSResponse resp(req);
+  if (!resp.IsSuccessful())
+  {
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    return false;
+  }
+  const JSON::Document json(resp);
+  const JSON::Node& root = json.GetRoot();
+  if (!json.IsValid() || !root.IsObject())
+  {
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    return false;
+  }
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+
+  int64_t value = 0;
+  const JSON::Node& field = root.GetObjectValue("long");
+  if (!field.IsString() || string_to_int64(field.GetStringValue().c_str(), &value))
+    return -1;
+  return value;
 }
 
 static void ProcessRecordIN(unsigned proto, RecordSchedule& record)
@@ -1503,21 +1759,21 @@ RecordScheduleListPtr WSAPI::GetRecordScheduleList1_5()
     int32_to_string(req_count, buf);
     req.SetContentParam("Count", buf);
 
-    DBG(MYTH_DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
+    DBG(DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
     WSResponse resp(req);
     if (!resp.IsSuccessful())
     {
-      DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
       break;
     }
     const JSON::Document json(resp);
     const JSON::Node& root = json.GetRoot();
     if (!json.IsValid() || !root.IsObject())
     {
-      DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
       break;
     }
-    DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+    DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
     // Object: RecRuleList
     const JSON::Node& rlist = root.GetObjectValue("RecRuleList");
@@ -1544,7 +1800,7 @@ RecordScheduleListPtr WSAPI::GetRecordScheduleList1_5()
       ProcessRecordIN(proto, *record);
       ret->push_back(record);
     }
-    DBG(MYTH_DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
+    DBG(DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
     req_index += count; // Set next requested index
   }
   while (count == req_count);
@@ -1569,17 +1825,17 @@ RecordSchedulePtr WSAPI::GetRecordSchedule1_5(uint32_t recordid)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return ret;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return ret;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& rec = root.GetObjectValue("RecRule");
   RecordSchedulePtr record(new RecordSchedule()); // Using default constructor
@@ -1679,17 +1935,17 @@ bool WSAPI::AddRecordSchedule1_5(RecordSchedule& record)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return false;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& field = root.GetObjectValue("int");
   if (!field.IsString() || string_to_uint32(field.GetStringValue().c_str(), &recordid))
@@ -1770,17 +2026,17 @@ bool WSAPI::AddRecordSchedule1_7(RecordSchedule& record)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return false;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& field = root.GetObjectValue("uint");
   if (!field.IsString() || string_to_uint32(field.GetStringValue().c_str(), &recordid))
@@ -1862,17 +2118,17 @@ bool WSAPI::UpdateRecordSchedule1_7(RecordSchedule& record)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return false;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& field = root.GetObjectValue("bool");
   if (!field.IsString() || strcmp(field.GetStringValue().c_str(), "true"))
@@ -1895,17 +2151,17 @@ bool WSAPI::DisableRecordSchedule1_5(uint32_t recordid)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return false;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& field = root.GetObjectValue("bool");
   if (!field.IsString() || strcmp(field.GetStringValue().c_str(), "true"))
@@ -1928,17 +2184,17 @@ bool WSAPI::EnableRecordSchedule1_5(uint32_t recordid)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return false;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& field = root.GetObjectValue("bool");
   if (!field.IsString() || strcmp(field.GetStringValue().c_str(), "true"))
@@ -1961,17 +2217,17 @@ bool WSAPI::RemoveRecordSchedule1_5(uint32_t recordid)
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return false;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return false;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& field = root.GetObjectValue("bool");
   if (!field.IsString() || strcmp(field.GetStringValue().c_str(), "true"))
@@ -2020,21 +2276,21 @@ ProgramListPtr WSAPI::GetUpcomingList2_2()
     req.SetContentParam("Count", buf);
     req.SetContentParam("ShowAll", "true");
 
-    DBG(MYTH_DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
+    DBG(DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
     WSResponse resp(req);
     if (!resp.IsSuccessful())
     {
-      DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
       break;
     }
     const JSON::Document json(resp);
     const JSON::Node& root = json.GetRoot();
     if (!json.IsValid() || !root.IsObject())
     {
-      DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
       break;
     }
-    DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+    DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
     // Object: ProgramList
     const JSON::Node& plist = root.GetObjectValue("ProgramList");
@@ -2066,7 +2322,7 @@ ProgramListPtr WSAPI::GetUpcomingList2_2()
       JSON::BindObject(reco, &(program->recording), bindreco);
       ret->push_back(program);
     }
-    DBG(MYTH_DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
+    DBG(DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
     req_index += count; // Set next requested index
   }
   while (count == req_count);
@@ -2100,21 +2356,21 @@ ProgramListPtr WSAPI::GetConflictList1_5()
     int32_to_string(req_count, buf);
     req.SetContentParam("Count", buf);
 
-    DBG(MYTH_DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
+    DBG(DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
     WSResponse resp(req);
     if (!resp.IsSuccessful())
     {
-      DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
       break;
     }
     const JSON::Document json(resp);
     const JSON::Node& root = json.GetRoot();
     if (!json.IsValid() || !root.IsObject())
     {
-      DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
       break;
     }
-    DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+    DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
     // Object: ProgramList
     const JSON::Node& plist = root.GetObjectValue("ProgramList");
@@ -2146,7 +2402,7 @@ ProgramListPtr WSAPI::GetConflictList1_5()
       JSON::BindObject(reco, &(program->recording), bindreco);
       ret->push_back(program);
     }
-    DBG(MYTH_DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
+    DBG(DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
     req_index += count; // Set next requested index
   }
   while (count == req_count);
@@ -2180,21 +2436,21 @@ ProgramListPtr WSAPI::GetExpiringList1_5()
     int32_to_string(req_count, buf);
     req.SetContentParam("Count", buf);
 
-    DBG(MYTH_DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
+    DBG(DBG_DEBUG, "%s: request index(%d) count(%d)\n", __FUNCTION__, req_index, req_count);
     WSResponse resp(req);
     if (!resp.IsSuccessful())
     {
-      DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
       break;
     }
     const JSON::Document json(resp);
     const JSON::Node& root = json.GetRoot();
     if (!json.IsValid() || !root.IsObject())
     {
-      DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+      DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
       break;
     }
-    DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+    DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
     // Object: ProgramList
     const JSON::Node& plist = root.GetObjectValue("ProgramList");
@@ -2226,7 +2482,7 @@ ProgramListPtr WSAPI::GetExpiringList1_5()
       JSON::BindObject(reco, &(program->recording), bindreco);
       ret->push_back(program);
     }
-    DBG(MYTH_DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
+    DBG(DBG_DEBUG, "%s: received count(%d)\n", __FUNCTION__, count);
     req_index += count; // Set next requested index
   }
   while (count == req_count);
@@ -2245,17 +2501,17 @@ StringListPtr WSAPI::GetRecGroupList1_5()
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return ret;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return ret;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   // Object: Strings
   const JSON::Node& list = root.GetObjectValue("StringList");
@@ -2288,9 +2544,18 @@ WSStreamPtr WSAPI::GetFile1_32(const std::string& filename, const std::string& s
   req.SetContentParam("StorageGroup", sgname);
   req.SetContentParam("FileName", filename);
   WSResponse *resp = new WSResponse(req);
+  /* try redirection if any */
+  if (resp->GetStatusCode() == 301 && !resp->Redirection().empty())
+  {
+    URIParser uri(resp->Redirection());
+    WSRequest rreq(ResolveHostName(uri.Host()), uri.Port());
+    rreq.RequestService(std::string("/").append(uri.Path()));
+    delete resp;
+    resp = new WSResponse(rreq);
+  }
   if (!resp->IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     delete resp;
     return ret;
   }
@@ -2308,40 +2573,13 @@ WSStreamPtr WSAPI::GetChannelIcon1_32(uint32_t chanid, unsigned width, unsigned 
   req.RequestService("/Guide/GetChannelIcon");
   uint32_to_string(chanid, buf);
   req.SetContentParam("ChanId", buf);
-  if (width && height)
+  if (width)
   {
     uint32_to_string(width, buf);
     req.SetContentParam("Width", buf);
-    uint32_to_string(height, buf);
-    req.SetContentParam("Height", buf);
   }
-  WSResponse *resp = new WSResponse(req);
-  if (!resp->IsSuccessful())
+  if (height)
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
-    delete resp;
-    return ret;
-  }
-  ret.reset(new WSStream(resp));
-  return ret;
-}
-
-WSStreamPtr WSAPI::GetPreviewImage1_32(uint32_t chanid, time_t recstartts, unsigned width, unsigned height)
-{
-  WSStreamPtr ret;
-  char buf[32];
-
-  // Initialize request header
-  WSRequest req = WSRequest(m_server, m_port);
-  req.RequestService("/Content/GetPreviewImage");
-  uint32_to_string(chanid, buf);
-  req.SetContentParam("ChanId", buf);
-  time_to_iso8601utc(recstartts, buf);
-  req.SetContentParam("StartTime", buf);
-  if (width && height)
-  {
-    uint32_to_string(width, buf);
-    req.SetContentParam("Width", buf);
     uint32_to_string(height, buf);
     req.SetContentParam("Height", buf);
   }
@@ -2357,12 +2595,110 @@ WSStreamPtr WSAPI::GetPreviewImage1_32(uint32_t chanid, time_t recstartts, unsig
   }
   if (!resp->IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     delete resp;
     return ret;
   }
   ret.reset(new WSStream(resp));
   return ret;
+}
+
+std::string WSAPI::GetChannelIconUrl1_32(uint32_t chanid, unsigned width, unsigned height)
+{
+  char buf[32];
+  std::string uri;
+  uri.reserve(95);
+  uri.append("http://").append(m_server);
+  if (m_port != 80)
+  {
+    uint32_to_string(m_port, buf);
+    uri.append(":").append(buf);
+  }
+  uri.append("/Guide/GetChannelIcon");
+  uint32_to_string(chanid, buf);
+  uri.append("?ChanId=").append(buf);
+  if (width)
+  {
+    uint32_to_string(width, buf);
+    uri.append("&Width=").append(buf);
+  }
+  if (height)
+  {
+    uint32_to_string(height, buf);
+    uri.append("&Height=").append(buf);
+  }
+  return uri;
+}
+
+WSStreamPtr WSAPI::GetPreviewImage1_32(uint32_t chanid, time_t recstartts, unsigned width, unsigned height)
+{
+  WSStreamPtr ret;
+  char buf[32];
+
+  // Initialize request header
+  WSRequest req = WSRequest(m_server, m_port);
+  req.RequestService("/Content/GetPreviewImage");
+  uint32_to_string(chanid, buf);
+  req.SetContentParam("ChanId", buf);
+  time_to_iso8601utc(recstartts, buf);
+  req.SetContentParam("StartTime", buf);
+  if (width)
+  {
+    uint32_to_string(width, buf);
+    req.SetContentParam("Width", buf);
+  }
+  if (height)
+  {
+    uint32_to_string(height, buf);
+    req.SetContentParam("Height", buf);
+  }
+  WSResponse *resp = new WSResponse(req);
+  /* try redirection if any */
+  if (resp->GetStatusCode() == 301 && !resp->Redirection().empty())
+  {
+    URIParser uri(resp->Redirection());
+    WSRequest rreq(ResolveHostName(uri.Host()), uri.Port());
+    rreq.RequestService(std::string("/").append(uri.Path()));
+    delete resp;
+    resp = new WSResponse(rreq);
+  }
+  if (!resp->IsSuccessful())
+  {
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    delete resp;
+    return ret;
+  }
+  ret.reset(new WSStream(resp));
+  return ret;
+}
+
+std::string WSAPI::GetPreviewImageUrl1_32(uint32_t chanid, time_t recstartts, unsigned width, unsigned height)
+{
+  char buf[32];
+  std::string uri;
+  uri.reserve(95);
+  uri.append("http://").append(m_server);
+  if (m_port != 80)
+  {
+    uint32_to_string(m_port, buf);
+    uri.append(":").append(buf);
+  }
+  uri.append("/Content/GetPreviewImage");
+  uint32_to_string(chanid, buf);
+  uri.append("?ChanId=").append(buf);
+  time_to_iso8601utc(recstartts, buf);
+  uri.append("&StartTime=").append(encodeParam(buf));
+  if (width)
+  {
+    uint32_to_string(width, buf);
+    uri.append("&Width=").append(buf);
+  }
+  if (height)
+  {
+    uint32_to_string(height, buf);
+    uri.append("&Height=").append(buf);
+  }
+  return uri;
 }
 
 WSStreamPtr WSAPI::GetRecordingArtwork1_32(const std::string& type, const std::string& inetref, uint16_t season, unsigned width, unsigned height)
@@ -2377,22 +2713,63 @@ WSStreamPtr WSAPI::GetRecordingArtwork1_32(const std::string& type, const std::s
   req.SetContentParam("Inetref", inetref.c_str());
   uint16_to_string(season, buf);
   req.SetContentParam("Season", buf);
-  if (width && height)
+  if (width)
   {
     uint32_to_string(width, buf);
     req.SetContentParam("Width", buf);
+  }
+  if (height)
+  {
     uint32_to_string(height, buf);
     req.SetContentParam("Height", buf);
   }
   WSResponse *resp = new WSResponse(req);
+  /* try redirection if any */
+  if (resp->GetStatusCode() == 301 && !resp->Redirection().empty())
+  {
+    URIParser uri(resp->Redirection());
+    WSRequest rreq(ResolveHostName(uri.Host()), uri.Port());
+    rreq.RequestService(std::string("/").append(uri.Path()));
+    delete resp;
+    resp = new WSResponse(rreq);
+  }
   if (!resp->IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     delete resp;
     return ret;
   }
   ret.reset(new WSStream(resp));
   return ret;
+}
+
+std::string WSAPI::GetRecordingArtworkUrl1_32(const std::string& type, const std::string& inetref, uint16_t season, unsigned width, unsigned height)
+{
+  char buf[32];
+  std::string uri;
+  uri.reserve(127);
+  uri.append("http://").append(m_server);
+  if (m_port != 80)
+  {
+    uint32_to_string(m_port, buf);
+    uri.append(":").append(buf);
+  }
+  uri.append("/Content/GetRecordingArtwork");
+  uri.append("?Type=").append(encodeParam(type));
+  uri.append("&Inetref=").append(encodeParam(inetref));
+  uint16_to_string(season, buf);
+  uri.append("&Season=").append(buf);
+  if (width)
+  {
+    uint32_to_string(width, buf);
+    uri.append("&Width=").append(buf);
+  }
+  if (height)
+  {
+    uint32_to_string(height, buf);
+    uri.append("&Height=").append(buf);
+  }
+  return uri;
 }
 
 ArtworkListPtr WSAPI::GetRecordingArtworkList1_32(uint32_t chanid, time_t recstartts)
@@ -2414,17 +2791,17 @@ ArtworkListPtr WSAPI::GetRecordingArtworkList1_32(uint32_t chanid, time_t recsta
   WSResponse resp(req);
   if (!resp.IsSuccessful())
   {
-    DBG(MYTH_DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: invalid response\n", __FUNCTION__);
     return ret;
   }
   const JSON::Document json(resp);
   const JSON::Node& root = json.GetRoot();
   if (!json.IsValid() || !root.IsObject())
   {
-    DBG(MYTH_DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: unexpected content\n", __FUNCTION__);
     return ret;
   }
-  DBG(MYTH_DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
+  DBG(DBG_DEBUG, "%s: content parsed\n", __FUNCTION__);
 
   const JSON::Node& list = root.GetObjectValue("ArtworkInfoList");
   // Bind artwork list
@@ -2438,4 +2815,12 @@ ArtworkListPtr WSAPI::GetRecordingArtworkList1_32(uint32_t chanid, time_t recsta
     ret->push_back(artwork);
   }
   return ret;
+}
+
+// Internal
+#include "private/urlencoder.h"
+
+static std::string encodeParam(const std::string& str)
+{
+  return urlencode(str);
 }

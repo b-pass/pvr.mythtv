@@ -20,8 +20,8 @@
  */
 
 #include "mythlivetvplayback.h"
-#include "mythdebug.h"
-#include "private/mythsocket.h"
+#include "private/debug.h"
+#include "private/socket.h"
 #include "private/os/threads/mutex.h"
 #include "private/os/threads/timeout.h"
 #include "private/builtin.h"
@@ -35,6 +35,7 @@
 #define TICK_USEC             100000  // valid range: 10000 - 999999
 #define START_TIMEOUT         2000    // millisec
 #define AHEAD_TIMEOUT         10000   // millisec
+#define BREAK_TIMEOUT         4000    // millisec
 
 using namespace Myth;
 
@@ -52,7 +53,11 @@ LiveTVPlayback::LiveTVPlayback(EventHandler& handler)
 , m_recorder()
 , m_signal()
 , m_chain()
+, m_chunk(MYTH_LIVETV_CHUNK_SIZE)
 {
+  m_buffer.pos = 0;
+  m_buffer.len = 0;
+  m_buffer.data = new unsigned char[m_chunk];
   m_eventSubscriberId = m_eventHandler.CreateSubscription(this);
   m_eventHandler.SubscribeForEvent(m_eventSubscriberId, EVENT_SIGNAL);
   m_eventHandler.SubscribeForEvent(m_eventSubscriberId, EVENT_LIVETV_CHAIN);
@@ -70,7 +75,11 @@ LiveTVPlayback::LiveTVPlayback(const std::string& server, unsigned port)
 , m_recorder()
 , m_signal()
 , m_chain()
+, m_chunk(MYTH_LIVETV_CHUNK_SIZE)
 {
+  m_buffer.pos = 0;
+  m_buffer.len = 0;
+  m_buffer.data = new unsigned char[m_chunk];
   // Private handler will be stopped and closed by destructor.
   m_eventSubscriberId = m_eventHandler.CreateSubscription(this);
   m_eventHandler.SubscribeForEvent(m_eventSubscriberId, EVENT_SIGNAL);
@@ -86,6 +95,7 @@ LiveTVPlayback::~LiveTVPlayback()
   if (m_eventSubscriberId)
     m_eventHandler.RevokeSubscription(m_eventSubscriberId);
   Close();
+  delete[] m_buffer.data;
 }
 
 bool LiveTVPlayback::Open()
@@ -106,9 +116,9 @@ bool LiveTVPlayback::Open()
       }
       while (!m_eventHandler.IsConnected() && timeout.TimeLeft() > 0);
       if (!m_eventHandler.IsConnected())
-        DBG(MYTH_DBG_WARN, "%s: event handler is not connected in time\n", __FUNCTION__);
+        DBG(DBG_WARN, "%s: event handler is not connected in time\n", __FUNCTION__);
       else
-        DBG(MYTH_DBG_DEBUG, "%s: event handler is connected\n", __FUNCTION__);
+        DBG(DBG_DEBUG, "%s: event handler is connected\n", __FUNCTION__);
     }
     return true;
   }
@@ -146,7 +156,7 @@ bool LiveTVPlayback::SpawnLiveTV(const std::string& chanNum, const ChannelList& 
   OS::CLockGuard lock(*m_mutex);
   if (!ProtoMonitor::IsOpen() || !m_eventHandler.IsConnected())
   {
-    DBG(MYTH_DBG_ERROR, "%s: not connected\n", __FUNCTION__);
+    DBG(DBG_ERROR, "%s: not connected\n", __FUNCTION__);
     return false;
   }
 
@@ -158,7 +168,7 @@ bool LiveTVPlayback::SpawnLiveTV(const std::string& chanNum, const ChannelList& 
     InitChain(); // Setup chain
     const CardInputPtr& input = card->second.first;
     const ChannelPtr& channel = card->second.second;
-    DBG(MYTH_DBG_DEBUG, "%s: trying recorder num (%" PRIu32 ") channum (%s)\n", __FUNCTION__, input->cardId, channel->chanNum.c_str());
+    DBG(DBG_DEBUG, "%s: trying recorder num (%" PRIu32 ") channum (%s)\n", __FUNCTION__, input->cardId, channel->chanNum.c_str());
     m_recorder = GetRecorderFromNum((int) input->cardId);
     // Setup the chain
     m_chain.switchOnCreate = true;
@@ -175,19 +185,19 @@ bool LiveTVPlayback::SpawnLiveTV(const std::string& chanNum, const ChannelList& 
         lock.Lock();
         if (!m_chain.switchOnCreate)
         {
-          DBG(MYTH_DBG_DEBUG, "%s: tune delay (%" PRIu32 "ms)\n", __FUNCTION__, (delayMs - timeout.TimeLeft()));
+          DBG(DBG_DEBUG, "%s: tune delay (%" PRIu32 "ms)\n", __FUNCTION__, (delayMs - timeout.TimeLeft()));
           return true;
         }
       }
       while (timeout.TimeLeft() > 0);
-      DBG(MYTH_DBG_ERROR, "%s: tune delay exceeded (%" PRIu32 "ms)\n", __FUNCTION__, delayMs);
+      DBG(DBG_ERROR, "%s: tune delay exceeded (%" PRIu32 "ms)\n", __FUNCTION__, delayMs);
       m_recorder->StopLiveTV();
     }
     ClearChain();
     // Check if we need to stop after first attempt at tuning
     if (m_limitTuneAttempts)
     {
-      DBG(MYTH_DBG_DEBUG, "%s: limiting tune attempts to first tunable card\n", __FUNCTION__);
+      DBG(DBG_DEBUG, "%s: limiting tune attempts to first tunable card\n", __FUNCTION__);
       break;
     }
     // Retry the next preferred card
@@ -268,7 +278,7 @@ void LiveTVPlayback::HandleChainUpdate()
    */
   if (prog && !prog->fileName.empty() && !IsChained(*prog))
   {
-    DBG(MYTH_DBG_DEBUG, "%s: liveTV (%s): adding new transfer %s\n", __FUNCTION__,
+    DBG(DBG_DEBUG, "%s: liveTV (%s): adding new transfer %s\n", __FUNCTION__,
             m_chain.UID.c_str(), prog->fileName.c_str());
     ProtoTransferPtr transfer(new ProtoTransfer(recorder->GetServer(), recorder->GetPort(), prog->fileName, prog->recording.storageGroup));
     // Pop previous dummy file if exists then add the new into the chain
@@ -286,7 +296,7 @@ void LiveTVPlayback::HandleChainUpdate()
     if (m_chain.switchOnCreate && transfer->GetSize() > 0 && SwitchChainLast())
       m_chain.switchOnCreate = false;
     m_chain.watch = false; // Chain update done. Restore watch flag
-    DBG(MYTH_DBG_DEBUG, "%s: liveTV (%s): chain last (%u), watching (%u)\n", __FUNCTION__,
+    DBG(DBG_DEBUG, "%s: liveTV (%s): chain last (%u), watching (%u)\n", __FUNCTION__,
             m_chain.UID.c_str(), m_chain.lastSequence, m_chain.currentSequence);
   }
 }
@@ -302,7 +312,7 @@ bool LiveTVPlayback::SwitchChain(unsigned sequence)
     return false;
   m_chain.currentTransfer = m_chain.chained[sequence - 1].first;
   m_chain.currentSequence = sequence;
-  DBG(MYTH_DBG_DEBUG, "%s: switch to file (%u) %s\n", __FUNCTION__,
+  DBG(DBG_DEBUG, "%s: switch to file (%u) %s\n", __FUNCTION__,
           (unsigned)m_chain.currentTransfer->GetFileId(), m_chain.currentTransfer->GetPathName().c_str());
   return true;
 }
@@ -394,9 +404,9 @@ void LiveTVPlayback::HandleBackendMessage(EventMessagePtr msg)
             /*
              * Last recording is now completed but watch signal is ON.
              * Then force live tv chain update for the new current
-             * program. We will retry for 2s before returning.
+             * program. We will retry for a short period before returning.
              */
-            OS::CTimeout timeout(2000);
+            OS::CTimeout timeout(BREAK_TIMEOUT);
             do
             {
               usleep(500000); // wait for 500 ms
@@ -442,7 +452,7 @@ void LiveTVPlayback::HandleBackendMessage(EventMessagePtr msg)
           // Is wait the filling before switching ?
           if (m_chain.switchOnCreate && SwitchChainLast())
             m_chain.switchOnCreate = false;
-          DBG(MYTH_DBG_DEBUG, "%s: liveTV (%s): chain last (%u) filesize %" PRIi64 "\n", __FUNCTION__,
+          DBG(DBG_DEBUG, "%s: liveTV (%s): chain last (%u) filesize %" PRIi64 "\n", __FUNCTION__,
                   m_chain.UID.c_str(), m_chain.lastSequence, newsize);
         }
       }
@@ -464,6 +474,19 @@ void LiveTVPlayback::HandleBackendMessage(EventMessagePtr msg)
   }
 }
 
+void LiveTVPlayback::SetChunk(unsigned size)
+{
+  if (size < MYTH_LIVETV_CHUNK_MIN)
+    size = MYTH_LIVETV_CHUNK_MIN;
+  else if (size > MYTH_LIVETV_CHUNK_MAX)
+    size = MYTH_LIVETV_CHUNK_MAX;
+
+  m_buffer.pos = m_buffer.len = 0;
+  delete[] m_buffer.data;
+  m_buffer.data = new unsigned char[size];
+  m_chunk = size;
+}
+
 int64_t LiveTVPlayback::GetSize() const
 {
   int64_t size = 0;
@@ -474,6 +497,41 @@ int64_t LiveTVPlayback::GetSize() const
 }
 
 int LiveTVPlayback::Read(void* buffer, unsigned n)
+{
+  int c = 0;
+  bool refill = true;
+  for (;;)
+  {
+    // all requested data are in the buffer
+    if (m_buffer.len >= n)
+    {
+      memcpy(static_cast<unsigned char*>(buffer) + c, m_buffer.data + m_buffer.pos, n);
+      c += n;
+      m_buffer.pos += n;
+      m_buffer.len -= n;
+      return c;
+    }
+    // fill with the rest of data before read a new chunk
+    if (m_buffer.len > 0)
+    {
+      memcpy(static_cast<unsigned char*>(buffer) + c, m_buffer.data + m_buffer.pos, m_buffer.len);
+      c += m_buffer.len;
+      n -= m_buffer.len;
+      m_buffer.len = 0;
+    }
+    if (!refill)
+      break;
+    m_buffer.pos = 0;
+    int r = _read(m_buffer.data, m_chunk);
+    if (r < 0)
+      return -1;
+    m_buffer.len += r;
+    refill = false; // won't read again
+  }
+  return c;
+}
+
+int LiveTVPlayback::_read(void* buffer, unsigned n)
 {
   int r = 0;
   bool retry;
@@ -508,7 +566,7 @@ int LiveTVPlayback::Read(void* buffer, unsigned n)
           }
           if (!timeout.TimeLeft())
           {
-            DBG(MYTH_DBG_WARN, "%s: read position is ahead (%" PRIi64 ")\n", __FUNCTION__, fp);
+            DBG(DBG_WARN, "%s: read position is ahead (%" PRIi64 ")\n", __FUNCTION__, fp);
             return 0;
           }
           usleep(500000);
@@ -520,7 +578,7 @@ int LiveTVPlayback::Read(void* buffer, unsigned n)
             return -1;
           if (m_chain.currentTransfer->GetPosition() != 0)
             recorder->TransferSeek(*(m_chain.currentTransfer), 0, WHENCE_SET);
-          DBG(MYTH_DBG_DEBUG, "%s: liveTV (%s): chain last (%u), watching (%u)\n", __FUNCTION__,
+          DBG(DBG_DEBUG, "%s: liveTV (%s): chain last (%u), watching (%u)\n", __FUNCTION__,
                 m_chain.UID.c_str(), m_chain.lastSequence, m_chain.currentSequence);
           retry = true;
           break;
@@ -540,6 +598,23 @@ int LiveTVPlayback::Read(void* buffer, unsigned n)
 }
 
 int64_t LiveTVPlayback::Seek(int64_t offset, WHENCE_t whence)
+{
+  if (whence == WHENCE_CUR)
+  {
+    if (offset == 0)
+    {
+      int64_t p = _seek(offset, whence);
+      // it returns the current position of the first byte in buffer
+      return (p >= m_buffer.len ? p - m_buffer.len : p);
+    }
+    // rebase to the first position in the buffer
+    offset -= m_buffer.len;
+  }
+  m_buffer.len = 0; // clear data in buffer
+  return _seek(offset, whence);
+}
+
+int64_t LiveTVPlayback::_seek(int64_t offset, WHENCE_t whence)
 {
   OS::CLockGuard lock(*m_mutex); // Lock chain
   if (!m_recorder || !m_chain.currentSequence)
@@ -565,7 +640,7 @@ int64_t LiveTVPlayback::Seek(int64_t offset, WHENCE_t whence)
   }
   if (p > size || p < 0)
   {
-    DBG(MYTH_DBG_WARN, "%s: invalid seek (%" PRId64 ")\n", __FUNCTION__, p);
+    DBG(DBG_WARN, "%s: invalid seek (%" PRId64 ")\n", __FUNCTION__, p);
     return -1;
   }
   if (p > position)
@@ -625,7 +700,8 @@ int64_t LiveTVPlayback::GetPosition() const
       pos += m_chain.chained[i].first->GetSize();
     pos += m_chain.currentTransfer->GetPosition();
   }
-  return pos;
+  // it returns the current position of first byte in buffer
+  return pos - m_buffer.len;
 }
 
 bool LiveTVPlayback::IsPlaying() const
@@ -730,7 +806,7 @@ LiveTVPlayback::preferredCards_t LiveTVPlayback::FindTunableCardIds(const std::s
       if ((*itchan)->sourceId == (*iti)->sourceId && ( (*iti)->mplexId == 0 || (*iti)->mplexId == (*itchan)->mplexId ))
       {
         preferredCards.insert(std::make_pair((*iti)->liveTVOrder, std::make_pair(*iti, *itchan)));
-        DBG(MYTH_DBG_DEBUG, "%s: [%u] channel=%s(%" PRIu32 ") card=%" PRIu32 " input=%s(%" PRIu32 ") mplex=%" PRIu32 " source=%" PRIu32 "\n",
+        DBG(DBG_DEBUG, "%s: [%u] channel=%s(%" PRIu32 ") card=%" PRIu32 " input=%s(%" PRIu32 ") mplex=%" PRIu32 " source=%" PRIu32 "\n",
                 __FUNCTION__, (*iti)->liveTVOrder, (*itchan)->callSign.c_str(), (*itchan)->chanId,
                 (*iti)->cardId, (*iti)->inputName.c_str(), (*iti)->inputId, (*iti)->mplexId, (*iti)->sourceId);
         break;

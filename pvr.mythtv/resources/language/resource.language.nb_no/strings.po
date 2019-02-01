@@ -42,11 +42,11 @@ msgstr "Inkluder mer debug informasjon i logg filen"
 
 msgctxt "#30006"
 msgid "Enable Live TV"
-msgstr "Aktiver Live TV"
+msgstr "Skru på direkte-TV"
 
 msgctxt "#30007"
 msgid "Allow Live TV to move scheduled shows"
-msgstr "Tillat at Live TV flytter avtalte programmer"
+msgstr "Tillat at direkte-TV flytter avtalte programmer"
 
 msgctxt "#30008"
 msgid "Conflict handling"
@@ -54,15 +54,15 @@ msgstr "Konflikthåndtering"
 
 msgctxt "#30009"
 msgid "Prefer Live TV when recording has later slot"
-msgstr "Foretrekk Live TV når opptak er satt til senere"
+msgstr "Foretrekk direkte-TV når opptak er satt til senere"
 
 msgctxt "#30010"
 msgid "Prefer recording and stop Live TV"
-msgstr "Foretrekk opptak og stopp Live TV"
+msgstr "Foretrekk opptak og stopp direkte-TV"
 
 msgctxt "#30011"
 msgid "Prefer Live TV and cancel conflicting recording"
-msgstr "Foretrekk Live TV og avbryt motstridende opptak"
+msgstr "Foretrekk direkte-TV og avbryt motstridende opptak"
 
 msgctxt "#30012"
 msgid "MythTV Backend Ethernet address (WOL)"
@@ -132,6 +132,14 @@ msgctxt "#30034"
 msgid "Allow recordings to expire"
 msgstr "Tillat opptak å utløpe"
 
+msgctxt "#30047"
+msgid "Prompt to delete the watched recording"
+msgstr "Spør før sletting av sette opptak"
+
+msgctxt "#30048"
+msgid "Show 'Original Airdate' instead of 'Recording Time'"
+msgstr "Vis 'Opprinnelig sendedato' i stedet for 'Opptakstid'"
+
 msgctxt "#30049"
 msgid "Recording template"
 msgstr "Opptaksmal"
@@ -139,6 +147,10 @@ msgstr "Opptaksmal"
 msgctxt "#30050"
 msgid "Advanced"
 msgstr "Avansert"
+
+msgctxt "#30051"
+msgid "Preferences"
+msgstr "Innstillinger"
 
 msgctxt "#30052"
 msgid "Enable demuxing MPEG-TS"
@@ -190,11 +202,19 @@ msgstr "Aktiver kanal-ikoner"
 
 msgctxt "#30064"
 msgid "Enable recording fanart/thumbnails"
-msgstr "Aktiver fanart/miniatyrbilder for optak"
+msgstr "Aktiver brukerkunstbidragminiatyrbilder for opptak"
 
 msgctxt "#30065"
 msgid "Limit channel tuning attempts"
 msgstr "Begrens kanal justerings forsøk"
+
+msgctxt "#30066"
+msgid "Show inactive upcomings (alternative/recorded/expired)"
+msgstr "Vis kommende inaktive (alternativer/opptak/utgått)"
+
+msgctxt "#30067"
+msgid "Show LiveTV recordings"
+msgstr "Vis LiveTV-opptak"
 
 msgctxt "#30100"
 msgid "Protocol version: %i - Database version: %i"
@@ -218,11 +238,11 @@ msgstr "Ønsker du å prøve på nytt ?"
 
 msgctxt "#30300"
 msgid "Failed to connect the MythTV backend with the known protocol versions. Please check the compatibility map of the addon and upgrade your backend to a supported version."
-msgstr "Tilkoblingen feilet til MythTV tjenesten med kjent protokoll versjon. Vennligst sjekk kompatibiliteten for tillegget og oppgrader din tjeneste til en støttet versjon."
+msgstr "Tilkoblingen feilet til MythTV-tjenesten med kjent protokollversjon. Sjekk kompatibiliteten for tillegget og oppgrader din tjeneste til en støttet versjon."
 
 msgctxt "#30301"
 msgid "Failed to connect the API services of MythTV backend. Please check your PIN code or backend setup. The PIN code has to be configured in your backend to allow connection."
-msgstr "Tilkobling feilet til API tjensten til MythTV tjenste. Vennligst sjekk din PIN kode eller tjeneste oppsett. PIN koden må konfigureres på din tjeneste for å tillate tilkobling."
+msgstr "Tilkobling feilet til API-tjensten til MythTV-tjenste. Sjekk din PIN-kode eller tjenesteoppsett. PIN-koden må settes opp på din tjeneste for å tillate tilkobling."
 
 msgctxt "#30302"
 msgid "Connection to MythTV backend lost"
@@ -277,8 +297,8 @@ msgid "Keep recording"
 msgstr "Behold opptak"
 
 msgctxt "#30421"
-msgid "Show/hide inactive upcomings"
-msgstr "Vis/skjul inaktive kommende"
+msgid "Toggle display of alternative/recorded/expired"
+msgstr "Veksle skjerm for alternativ/tatt opp/utgått"
 
 msgctxt "#30422"
 msgid "Refresh cache for channel icons"
@@ -286,7 +306,7 @@ msgstr "Oppdater minne for kanal ikoner"
 
 msgctxt "#30423"
 msgid "Trigger channels update"
-msgstr "Sjekk kanal oppdateringer"
+msgstr "Sjekk kanaloppdateringer"
 
 msgctxt "#30424"
 msgid "Show status of scheduling"
@@ -315,6 +335,18 @@ msgstr "Kommende manuell"
 msgctxt "#30456"
 msgid "Zombie"
 msgstr "Zombie"
+
+msgctxt "#30457"
+msgid "Alternative"
+msgstr "Alternativ"
+
+msgctxt "#30458"
+msgid "Currently recorded"
+msgstr "For øyeblikket tatt opp"
+
+msgctxt "#30459"
+msgid "Expired recording"
+msgstr "Utgåtte opptak"
 
 msgctxt "#30460"
 msgid "Manual"
@@ -352,6 +384,10 @@ msgctxt "#30468"
 msgid "Search people"
 msgstr "Søk personer"
 
+msgctxt "#30469"
+msgid "Rule disabled"
+msgstr "Regel utkoblet"
+
 msgctxt "#30501"
 msgid "Don't match duplicates"
 msgstr "Ikke gjenkjenn duplikater"
@@ -370,11 +406,11 @@ msgstr "Gjenkjen duplikater ved hjelp av undertekster og beskrivelse"
 
 msgctxt "#30505"
 msgid "Match duplicates using subtitle then description"
-msgstr "Gjenkjen duplikater ved hjelp av undertekster så beskrivelse"
+msgstr "Gjenkjenn duplikater ved hjelp av undertekster, dernest beskrivelse"
 
 msgctxt "#30506"
 msgid "Recordings never expire"
-msgstr "Opptak utløper avldri"
+msgstr "Opptak utløper aldri"
 
 msgctxt "#30507"
 msgid "Allow recordings to expire"
@@ -386,4 +422,4 @@ msgstr "Behold opptil %d opptak"
 
 msgctxt "#30509"
 msgid "Keep %d newest and expire old"
-msgstr "Behold %d nyeste og utløp eldre"
+msgstr "Behold %d nyeste og la eldre utløpe"

@@ -22,10 +22,8 @@
  */
 
 #include "cppmyth.h"
-#include "fileOps.h"
+#include "artworksmanager.h"
 #include "categories.h"
-#include "demux.h"
-#include "filestreaming.h"
 
 #include <xbmc_pvr_types.h>
 #include <p8-platform/threads/mutex.h>
@@ -40,7 +38,10 @@
 #include <vector>
 #include <map>
 
-class PVRClientMythTV : public Myth::EventSubscriber, FileConsumer
+class FileStreaming;
+class TaskHandler;
+
+class PVRClientMythTV : public Myth::EventSubscriber
 {
 public:
   PVRClientMythTV();
@@ -50,12 +51,13 @@ public:
   typedef enum
   {
     CONN_ERROR_NO_ERROR,
+    CONN_ERROR_NOT_CONNECTED,
     CONN_ERROR_SERVER_UNREACHABLE,
     CONN_ERROR_UNKNOWN_VERSION,
     CONN_ERROR_API_UNAVAILABLE,
   } CONN_ERROR;
 
-  void SetDebug();
+  void SetDebug(bool silent = false);
   bool Connect();
   CONN_ERROR GetConnectionError() const;
   unsigned GetBackendAPIVersion();
@@ -74,10 +76,8 @@ public:
   void HandleScheduleChange();
   void HandleAskRecording(const Myth::EventMessage& msg);
   void HandleRecordingListChange(const Myth::EventMessage& msg);
+  void PromptDeleteRecording(const MythProgramInfo &prog);
   void RunHouseKeeping();
-
-  // Implement FileConsumer
-  void HandleCleanedCache();
 
   // EPG
   PVR_ERROR GetEPGForChannel(ADDON_HANDLE handle, const PVR_CHANNEL &channel, time_t iStart, time_t iEnd);
@@ -99,8 +99,8 @@ public:
   PVR_ERROR DeleteRecording(const PVR_RECORDING &recording);
   PVR_ERROR DeleteAndForgetRecording(const PVR_RECORDING &recording);
   PVR_ERROR SetRecordingPlayCount(const PVR_RECORDING &recording, int count);
-  //PVR_ERROR SetRecordingLastPlayedPosition(const PVR_RECORDING &recording, int lastplayedposition);
-  //int GetRecordingLastPlayedPosition(const PVR_RECORDING &recording);
+  PVR_ERROR SetRecordingLastPlayedPosition(const PVR_RECORDING &recording, int lastplayedposition);
+  int GetRecordingLastPlayedPosition(const PVR_RECORDING &recording);
   PVR_ERROR GetRecordingEdl(const PVR_RECORDING &recording, PVR_EDL_ENTRY entries[], int *size);
   PVR_ERROR UndeleteRecording(const PVR_RECORDING& recording);
   PVR_ERROR PurgeDeletedRecordings();
@@ -117,21 +117,11 @@ public:
   bool OpenLiveStream(const PVR_CHANNEL &channel);
   void CloseLiveStream();
   int ReadLiveStream(unsigned char *pBuffer, unsigned int iBufferSize);
-  bool SwitchChannel(const PVR_CHANNEL &channel);
   long long SeekLiveStream(long long iPosition, int iWhence);
   long long LengthLiveStream();
   PVR_ERROR SignalStatus(PVR_SIGNAL_STATUS &signalStatus);
   bool IsRealTimeStream() const { return m_liveStream ? true : false; }
-
-  PVR_ERROR GetStreamProperties(PVR_STREAM_PROPERTIES* pProperties);
-  void DemuxAbort(void);
-  void DemuxFlush(void);
-  DemuxPacket* DemuxRead(void);
-  bool SeekTime(double time, bool backwards, double *startpts);
-
-  time_t GetPlayingTime();
-  time_t GetBufferTimeStart();
-  time_t GetBufferTimeEnd();
+  PVR_ERROR GetStreamTimes(PVR_STREAM_TIMES *pStreamTimes);
 
   // Recording playback
   bool OpenRecordedStream(const PVR_RECORDING &recinfo);
@@ -155,14 +145,22 @@ private:
   Myth::Control *m_control;
   Myth::LiveTVPlayback *m_liveStream;
   Myth::RecordingPlayback *m_recordingStream;
+  MythProgramInfo m_recordingStreamInfo;
   FileStreaming *m_dummyStream;
   bool m_hang;
   bool m_powerSaving;
+  bool m_stopTV;
+
+  /// Returns true when streaming recorded or live
+  bool IsPlaying() const;
 
   // Backend
-  FileOps *m_fileOps;
+  ArtworkManager *m_artworksManager;
   MythScheduleManager *m_scheduleManager;
-  P8PLATFORM::CMutex m_lock;
+  mutable P8PLATFORM::CMutex m_lock;
+
+  // Frontend
+  TaskHandler *m_todo;
 
   // Categories
   Categories m_categories;
@@ -173,6 +171,8 @@ private:
   struct PVRChannelItem
   {
     unsigned int iUniqueId;
+    unsigned int iChannelNumber;
+    unsigned int iSubChannelNumber;
     bool bIsRadio;
     bool operator <(const PVRChannelItem& other) const { return this->iUniqueId < other.iUniqueId; }
   };
@@ -186,9 +186,6 @@ private:
   int FillChannelsAndChannelGroups();
   MythChannel FindChannel(uint32_t channelId) const;
   int FindPVRChannelUid(uint32_t channelId) const;
-
-  // Demuxer TS
-  Demux *m_demux;
 
   // Recordings
   ProgramInfoMap m_recordings;

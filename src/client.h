@@ -28,7 +28,6 @@
 #include <libXBMC_addon.h>
 #include <libXBMC_pvr.h>
 #include <libKODI_guilib.h>
-#include <libXBMC_codec.h>
 
 #define LIVETV_CONFLICT_STRATEGY_HASLATER   0
 #define LIVETV_CONFLICT_STRATEGY_STOPTV     1
@@ -50,10 +49,10 @@
 #define MENUHOOK_KEEP_RECORDING             2
 #define MENUHOOK_TIMER_BACKEND_INFO         3
 #define MENUHOOK_SHOW_HIDE_NOT_RECORDING    4
-#define MENUHOOK_REFRESH_CHANNEL_ICONS      5
 #define MENUHOOK_TRIGGER_CHANNEL_UPDATE     6
+#define MENUHOOK_INFO_RECORDING             7
+#define MENUHOOK_INFO_EPG                   8
 
-#define DEFAULT_HANDLE_DEMUXING             false
 #define DEFAULT_TUNE_DELAY                  5
 #define GROUP_RECORDINGS_ALWAYS             0
 #define GROUP_RECORDINGS_ONLY_FOR_SERIES    1
@@ -65,7 +64,10 @@
 #define DEFAULT_BLOCK_SHUTDOWN              true
 #define DEFAULT_LIMIT_TUNE_ATTEMPTS         true
 #define DEFAULT_SHOW_NOT_RECORDING          true
-
+#define DEFAULT_PROMPT_DELETE               false
+#define DEFAULT_LIVETV_RECORDINGS           true
+#define DEFAULT_BACKEND_BOOKMARKS           true
+#define DEFAULT_ROOT_DEFAULT_GROUP          false
 /*!
  * @brief PVR macros for string exchange
  */
@@ -82,7 +84,6 @@ extern std::string  g_szUserPath;               ///< The Path to the user direct
 extern std::string  g_szClientPath;             ///< The Path where this driver is located
 
 /* Client Settings */
-extern bool         g_bNotifyAddonFailure;      ///< Notify user after failure of Create function
 extern std::string  g_szMythHostname;           ///< The Host name or IP of the mythtv server
 extern std::string  g_szMythHostEther;          ///< The Host MAC address of the mythtv server
 extern int          g_iProtoPort;               ///< The mythtv protocol port (default is 6543)
@@ -94,6 +95,7 @@ extern bool         g_bLiveTVPriority;          ///< MythTV Backend setting to a
 extern int          g_iLiveTVConflictStrategy;  ///< Live TV conflict resolving strategy (0=Has later, 1=Stop TV, 2=Cancel recording)
 extern bool         g_bChannelIcons;            ///< Load Channel Icons
 extern bool         g_bRecordingIcons;          ///< Load Recording Icons (Fanart/Thumbnails)
+extern bool         g_bLiveTVRecordings;        ///< Show LiveTV recordings
 extern int          g_iRecTemplateType;         ///< Template type for new record (0=Internal, 1=MythTV)
 ///@{
 /// Internal Record template
@@ -107,7 +109,6 @@ extern bool         g_bRecAutoRunJob4;
 extern bool         g_bRecAutoExpire;
 extern int          g_iRecTranscoder;
 ///@}
-extern bool         g_bDemuxing;
 extern int          g_iTuneDelay;
 extern int          g_iGroupRecordings;
 extern bool         g_bUseAirdate;
@@ -115,10 +116,12 @@ extern int          g_iEnableEDL;
 extern bool         g_bBlockMythShutdown;
 extern bool         g_bLimitTuneAttempts;       ///< Limit channel tuning attempts to first card
 extern bool         g_bShowNotRecording;
+extern bool         g_bPromptDeleteAtEnd;
+extern bool         g_bUseBackendBookmarks;
+extern bool         g_bRootDefaultGroup;
 
 extern ADDON::CHelper_libXBMC_addon *XBMC;
 extern CHelper_libXBMC_pvr          *PVR;
 extern CHelper_libKODI_guilib       *GUI;
-extern CHelper_libXBMC_codec        *CODEC;
 
 #endif /* CLIENT_H */

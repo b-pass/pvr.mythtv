@@ -1,6 +1,6 @@
 #pragma once
 /*
- *      Copyright (C) 2005-2014 Team XBMC
+ *      Copyright (C) 2018 Team XBMC
  *      http://www.xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -21,49 +21,36 @@
  *
  */
 
-#include "client.h"
-#include "guidialogbase.h"
+#include <p8-platform/threads/threads.h>
 
-class GUIDialogYesNo : public GUIDialogBase
+#include <queue>
+#include <vector>
+
+class Task
 {
 public:
+  virtual ~Task() { }
+  virtual void Execute() = 0;
+};
 
-  GUIDialogYesNo();
-  GUIDialogYesNo(const char *heading, const char *text, int focus);
-  ~GUIDialogYesNo();
+class TaskHandler : private P8PLATFORM::CThread
+{
+public:
+  TaskHandler();
+  ~TaskHandler();
 
-  bool OnInit();
-  bool OnClick(int controlId);
-  bool OnAction(int actionId);
+  void ScheduleTask(Task *task, unsigned delayMs = 0);
+  void Clear();
+  void Suspend();
+  bool resume();
 
-  void SetHeading(const char *heading)
-  {
-    m_heading.assign(heading);
-  }
-  void SetText(const char *text)
-  {
-    m_text.assign(text);
-  }
-  void SetFocus(int focus)
-  {
-    m_focus = focus;
-  }
-  bool IsNull()
-  {
-    return m_response == 0;
-  }
-  bool IsYes()
-  {
-    return m_response == 1;
-  }
-  bool IsNo()
-  {
-    return m_response == 2;
-  }
+protected:
+    void *Process();
 
 private:
-  std::string m_heading;
-  std::string m_text;
-  int m_focus;
-  int m_response;
+  typedef std::pair<Task*, P8PLATFORM::CTimeout*> Scheduled;
+  std::queue<Scheduled> m_queue;
+  std::vector<Scheduled> m_delayed;
+  P8PLATFORM::CMutex m_mutex;
+  P8PLATFORM::CEvent m_queueContent;
 };

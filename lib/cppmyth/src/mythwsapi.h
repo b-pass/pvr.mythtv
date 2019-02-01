@@ -151,7 +151,7 @@ namespace Myth
     };
 
     /**
-     * @brief GET Guide/GetProgramGuide
+     * @brief GET Guide/GetProgramGuide for the given channel
      */
     ProgramMapPtr GetProgramGuide(uint32_t chanid, time_t starttime, time_t endtime)
     {
@@ -159,6 +159,17 @@ namespace Myth
       if (wsv.ranking >= 0x00020002) return GetProgramList2_2(chanid, starttime, endtime);
       if (wsv.ranking >= 0x00010000) return GetProgramGuide1_0(chanid, starttime, endtime);
       return ProgramMapPtr(new ProgramMap);
+    }
+
+    /**
+     * @brief GET Guide/GetProgramGuide
+     */
+    std::map<uint32_t, ProgramMapPtr> GetProgramGuide(time_t starttime, time_t endtime)
+    {
+      WSServiceVersion_t wsv = CheckService(WS_Guide);
+      if (wsv.ranking >= 0x00020002) return GetProgramGuide2_2(starttime, endtime);
+      if (wsv.ranking >= 0x00010000) return GetProgramGuide1_0(starttime, endtime);
+      return std::map<uint32_t, ProgramMapPtr>();
     }
 
     /**
@@ -384,6 +395,16 @@ namespace Myth
     }
 
     /**
+     * @brief Returns URL for channel icon
+     */
+    std::string GetChannelIconUrl(uint32_t chanid, unsigned width = 0, unsigned height = 0)
+    {
+      WSServiceVersion_t wsv = CheckService(WS_Content);
+      if (wsv.ranking >= 0x00010020) return GetChannelIconUrl1_32(chanid, width, height);
+      return "";
+    }
+
+    /**
      * @brief GET Content/GetPreviewImage
      */
     WSStreamPtr GetPreviewImage(uint32_t chanid, time_t recstartts, unsigned width = 0, unsigned height = 0)
@@ -394,6 +415,16 @@ namespace Myth
     }
 
     /**
+     * @brief Returns URL for preview image
+     */
+    std::string GetPreviewImageUrl(uint32_t chanid, time_t recstartts, unsigned width = 0, unsigned height = 0)
+    {
+      WSServiceVersion_t wsv = CheckService(WS_Content);
+      if (wsv.ranking >= 0x00010020) return GetPreviewImageUrl1_32(chanid, recstartts, width, height);
+      return "";
+    }
+
+    /**
      * @brief GET Content/GetRecordingArtwork
      */
     WSStreamPtr GetRecordingArtwork(const std::string& type, const std::string& inetref, uint16_t season, unsigned width = 0, unsigned height = 0)
@@ -401,6 +432,16 @@ namespace Myth
       WSServiceVersion_t wsv = CheckService(WS_Content);
       if (wsv.ranking >= 0x00010020) return GetRecordingArtwork1_32(type, inetref, season, width, height);
       return WSStreamPtr();
+    }
+
+    /**
+     * @brief Returns URL for recording artwork
+     */
+    std::string GetRecordingArtworkUrl(const std::string& type, const std::string& inetref, uint16_t season, unsigned width = 0, unsigned height = 0)
+    {
+      WSServiceVersion_t wsv = CheckService(WS_Content);
+      if (wsv.ranking >= 0x00010020) return GetRecordingArtworkUrl1_32(type, inetref, season, width, height);
+      return "";
     }
 
     /**
@@ -415,28 +456,56 @@ namespace Myth
 
     /**
      * @brief GET Dvr/GetRecordedCommBreak
-     * @param recordedId
+     * @param recordedid
      * @param unit 0 = Frame count, 1 = Position, 2 = Duration ms
      * @return MarkListPtr
      */
-    MarkListPtr GetRecordedCommBreak(uint32_t recordedId, int unit)
+    MarkListPtr GetRecordedCommBreak(uint32_t recordedid, int unit)
     {
       WSServiceVersion_t wsv = CheckService(WS_Dvr);
-      if (wsv.ranking >= 0x00060001) return GetRecordedCommBreak6_1(recordedId, unit);
+      if (wsv.ranking >= 0x00060001) return GetRecordedCommBreak6_1(recordedid, unit);
       return MarkListPtr(new MarkList);
     }
 
     /**
      * @brief GET Dvr/GetRecordedCutList
-     * @param recordedId
+     * @param recordedid
      * @param unit 0 = Frame count, 1 = Position, 2 = Duration ms
      * @return MarkListPtr
      */
-    MarkListPtr GetRecordedCutList(uint32_t recordedId, int unit)
+    MarkListPtr GetRecordedCutList(uint32_t recordedid, int unit)
     {
       WSServiceVersion_t wsv = CheckService(WS_Dvr);
-      if (wsv.ranking >= 0x00060001) return GetRecordedCutList6_1(recordedId, unit);
+      if (wsv.ranking >= 0x00060001) return GetRecordedCutList6_1(recordedid, unit);
       return MarkListPtr(new MarkList);
+    }
+
+    /**
+     * @brief POST Dvr/SetSavedBookmark
+     * @param recordedid
+     * @param unit 1 = Position, 2 = Duration ms
+     * @param value of mark
+     * @return boolean
+     */
+    bool SetSavedBookmark(uint32_t recordedid, int unit, int64_t value)
+    {
+      WSServiceVersion_t wsv = CheckService(WS_Dvr);
+      if (wsv.ranking >= 0x00060002) return SetSavedBookmark6_2(recordedid, unit, value);
+      return false;
+    }
+
+
+    /**
+     * @brief GET Dvr/GetSavedBookmark
+     * @param recordedid
+     * @param unit 1 = Position, 2 = Duration ms
+     * @return value
+     */
+    int64_t GetSavedBookmark(uint32_t recordedid, int unit)
+    {
+      WSServiceVersion_t wsv = CheckService(WS_Dvr);
+      if (wsv.ranking >= 0x00060002) return GetSavedBookmark6_2(recordedid, unit);
+      return 0;
     }
 
   private:
@@ -472,7 +541,9 @@ namespace Myth
     ChannelListPtr GetChannelList1_5(uint32_t sourceid, bool onlyVisible);
     ChannelPtr GetChannel1_2(uint32_t chanid);
 
+    std::map<uint32_t, ProgramMapPtr> GetProgramGuide1_0(time_t starttime, time_t endtime);
     ProgramMapPtr GetProgramGuide1_0(uint32_t chanid, time_t starttime, time_t endtime);
+    std::map<uint32_t, ProgramMapPtr> GetProgramGuide2_2(time_t starttime, time_t endtime);
     ProgramMapPtr GetProgramList2_2(uint32_t chanid, time_t starttime, time_t endtime);
 
     ProgramListPtr GetRecordedList1_5(unsigned n, bool descending);
@@ -486,6 +557,8 @@ namespace Myth
     bool UpdateRecordedWatchedStatus6_0(uint32_t recordedid, bool watched);
     MarkListPtr GetRecordedCommBreak6_1(uint32_t recordedid, int unit);
     MarkListPtr GetRecordedCutList6_1(uint32_t recordedid, int unit);
+    bool SetSavedBookmark6_2(uint32_t recordedid, int unit, int64_t value);
+    int64_t GetSavedBookmark6_2(uint32_t recordedid, int unit);
 
     RecordScheduleListPtr GetRecordScheduleList1_5();
     RecordSchedulePtr GetRecordSchedule1_5(uint32_t recordid);
@@ -503,8 +576,11 @@ namespace Myth
 
     WSStreamPtr GetFile1_32(const std::string& filename, const std::string& sgname);
     WSStreamPtr GetChannelIcon1_32(uint32_t chanid, unsigned width, unsigned height);
+    std::string GetChannelIconUrl1_32(uint32_t chanid, unsigned width, unsigned height);
     WSStreamPtr GetPreviewImage1_32(uint32_t chanid, time_t recstartts, unsigned width, unsigned height);
+    std::string GetPreviewImageUrl1_32(uint32_t chanid, time_t recstartts, unsigned width, unsigned height);
     WSStreamPtr GetRecordingArtwork1_32(const std::string& type, const std::string& inetref, uint16_t season, unsigned width, unsigned height);
+    std::string GetRecordingArtworkUrl1_32(const std::string& type, const std::string& inetref, uint16_t season, unsigned width, unsigned height);
     ArtworkListPtr GetRecordingArtworkList1_32(uint32_t chanid, time_t recstartts);
   };
 
